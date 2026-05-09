@@ -51,25 +51,19 @@ export default function PersonCard({ person, tasks, weekTasks, index }) {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-muted rounded-xl p-3">
+          <div className="bg-muted rounded-xl p-3 relative">
+            {pendingBonus > 0 && (
+              <Trophy className="w-3 h-3 text-accent absolute top-2 right-2" />
+            )}
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Esta semana</p>
             <p className="text-xl font-bold text-primary mt-0.5">€{weekTotal.toFixed(2)}</p>
-            {pendingBonus > 0 && (
-              <p className="text-[9px] text-accent font-semibold mt-0.5 flex items-center gap-0.5">
-                <Trophy className="w-2.5 h-2.5" />
-                inclui +€{pendingBonus.toFixed(2)} bónus
-              </p>
-            )}
           </div>
-          <div className="bg-muted rounded-xl p-3">
+          <div className="bg-muted rounded-xl p-3 relative">
+            {pendingBonus > 0 && (
+              <Trophy className="w-3 h-3 text-accent absolute top-2 right-2" />
+            )}
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Este mês</p>
             <p className="text-xl font-bold text-foreground mt-0.5">€{monthTotal.toFixed(2)}</p>
-            {pendingBonus > 0 && (
-              <p className="text-[9px] text-accent font-semibold mt-0.5 flex items-center gap-0.5">
-                <Trophy className="w-2.5 h-2.5" />
-                inclui +€{pendingBonus.toFixed(2)} bónus
-              </p>
-            )}
           </div>
         </div>
 

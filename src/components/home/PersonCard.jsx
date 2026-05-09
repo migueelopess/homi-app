@@ -1,18 +1,27 @@
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PERSON_AVATARS, PENALTIES, calculateEarnings, countFailures, getLocalDateStr, getCurrentMonthKey } from '@/lib/taskHelpers';
-import { TrendingUp, AlertTriangle } from 'lucide-react';
+import { PERSON_AVATARS, PENALTIES, calculateEarnings, countFailures, getLocalDateStr, getCurrentMonthKey, getCurrentWeekKey, checkWeeklyBonus, isBonusTask, WEEKLY_BONUS } from '@/lib/taskHelpers';
+import { TrendingUp, AlertTriangle, Trophy } from 'lucide-react';
 
 export default function PersonCard({ person, tasks, weekTasks, index }) {
   const personTasks = tasks.filter(t => t.person === person);
   const personWeekTasks = weekTasks.filter(t => t.person === person);
   const currentMonth = getCurrentMonthKey();
+  const currentWeek = getCurrentWeekKey();
   const personMonthTasks = personTasks.filter(t => t.date && t.date.startsWith(currentMonth));
   const monthEarnings = calculateEarnings(personMonthTasks);
   const weekEarnings = calculateEarnings(personWeekTasks);
   const failures = countFailures(tasks, person);
   const todayTasks = personTasks.filter(t => t.date === getLocalDateStr());
+
+  // Pending bonus for the current week — only count if not already persisted
+  const currentWeekBonusAlreadyPersisted = personWeekTasks.some(t => isBonusTask(t) && t.week_key === currentWeek);
+  const pendingBonus = !currentWeekBonusAlreadyPersisted && checkWeeklyBonus(tasks, person, currentWeek)
+    ? WEEKLY_BONUS
+    : 0;
+  const weekTotal = weekEarnings + pendingBonus;
+  const monthTotal = monthEarnings + pendingBonus;
 
   return (
     <motion.div
@@ -44,11 +53,23 @@ export default function PersonCard({ person, tasks, weekTasks, index }) {
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-muted rounded-xl p-3">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Esta semana</p>
-            <p className="text-xl font-bold text-primary mt-0.5">€{weekEarnings.toFixed(2)}</p>
+            <p className="text-xl font-bold text-primary mt-0.5">€{weekTotal.toFixed(2)}</p>
+            {pendingBonus > 0 && (
+              <p className="text-[9px] text-accent font-semibold mt-0.5 flex items-center gap-0.5">
+                <Trophy className="w-2.5 h-2.5" />
+                inclui +€{pendingBonus.toFixed(2)} bónus
+              </p>
+            )}
           </div>
           <div className="bg-muted rounded-xl p-3">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Este mês</p>
-            <p className="text-xl font-bold text-foreground mt-0.5">€{monthEarnings.toFixed(2)}</p>
+            <p className="text-xl font-bold text-foreground mt-0.5">€{monthTotal.toFixed(2)}</p>
+            {pendingBonus > 0 && (
+              <p className="text-[9px] text-accent font-semibold mt-0.5 flex items-center gap-0.5">
+                <Trophy className="w-2.5 h-2.5" />
+                inclui +€{pendingBonus.toFixed(2)} bónus
+              </p>
+            )}
           </div>
         </div>
 

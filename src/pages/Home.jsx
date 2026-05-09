@@ -8,6 +8,7 @@ import RecentActivity from '@/components/home/RecentActivity';
 import TodaySchedule from '@/components/home/TodaySchedule';
 import { useNotifications } from '@/lib/useNotifications';
 import { useMarkMissedTasks } from '@/lib/useMarkMissedTasks';
+import { useMaterializeBonuses } from '@/lib/useMaterializeBonuses';
 import { motion } from 'framer-motion';
 import { Calendar } from 'lucide-react';
 
@@ -46,6 +47,8 @@ export default function Home() {
     person: userIsParent ? null : person,
     enabled: !userIsParent && !!person && !isLoadingTasks && !isLoadingScheduled && scheduledTasks.length > 0,
   });
+
+  useMaterializeBonuses({ tasks, enabled: !isLoadingTasks });
 
   useNotifications({
     scheduledTasks,

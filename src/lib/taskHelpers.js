@@ -9,6 +9,14 @@ export const COMPLETION_TYPES = {
 
 export const WEEKLY_BONUS = 4.00;
 
+// Reserved task name used to persist the weekly bonus as a regular task row
+export const BONUS_TASK_NAME = 'Bónus Semanal';
+export const BONUS_COMPLETION_TYPE = 'bonus';
+
+export function isBonusTask(task) {
+  return task?.task_name === BONUS_TASK_NAME;
+}
+
 export const PENALTIES = {
   'Inês': 'Telemóvel/TV',
   'Pedro': 'Monitores',
@@ -35,6 +43,7 @@ export const TASK_ICONS = {
   'Escovar Sidney': '🪮',
   'Limpeza mensal': '🧹',
   'Limpeza semanal': '🧽',
+  'Bónus Semanal': '🏆',
 };
 
 export const COMMON_TASKS = [
@@ -86,6 +95,20 @@ export function getCurrentWeekKey() {
   return getWeekKey(new Date());
 }
 
+// Returns the Sunday (last day) of an ISO week given its key e.g. "2026-W17"
+export function getWeekEndDate(weekKey) {
+  const [yearStr, weekStr] = weekKey.split('-W');
+  const year = parseInt(yearStr, 10);
+  const weekNum = parseInt(weekStr, 10);
+  const jan4 = new Date(year, 0, 4);
+  const jan4DayOfWeek = (jan4.getDay() + 6) % 7;
+  const week1Monday = new Date(jan4);
+  week1Monday.setDate(jan4.getDate() - jan4DayOfWeek);
+  const targetSunday = new Date(week1Monday);
+  targetSunday.setDate(week1Monday.getDate() + (weekNum - 1) * 7 + 6);
+  return targetSunday;
+}
+
 export function getCurrentMonthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -124,7 +147,9 @@ export function getMonthTasks(tasks, monthKey) {
 }
 
 export function checkWeeklyBonus(tasks, person, weekKey) {
-  const personWeekTasks = tasks.filter(t => t.person === person && t.week_key === weekKey);
+  const personWeekTasks = tasks.filter(
+    t => t.person === person && t.week_key === weekKey && !isBonusTask(t)
+  );
   if (personWeekTasks.length === 0) return false;
   return personWeekTasks.every(t => t.completion_type !== 'not_done');
 }

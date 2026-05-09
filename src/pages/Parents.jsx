@@ -6,7 +6,7 @@ import { Lock, Shield, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Star, Lo
 import PhotoModal from '@/components/parents/PhotoModal';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { supabase } from '@/api/supabaseClient';
-import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -95,9 +95,10 @@ export default function Parents() {
   const PersonSummary = ({ person, filteredTasks, periodLabel }) => {
     const earnings = calculateEarnings(filteredTasks.filter(t => t.person === person));
     const personTasks = filteredTasks.filter(t => t.person === person);
-    const perfect = personTasks.filter(t => t.completion_type === 'on_time_no_reminder').length;
-    const withReminder = personTasks.filter(t => t.completion_type === 'on_time_with_reminder').length;
-    const late = personTasks.filter(t => t.completion_type === 'late').length;
+    const realTasks = personTasks.filter(t => !isBonusTask(t));
+    const perfect = realTasks.filter(t => t.completion_type === 'on_time_no_reminder').length;
+    const withReminder = realTasks.filter(t => t.completion_type === 'on_time_with_reminder').length;
+    const late = realTasks.filter(t => t.completion_type === 'late').length;
     const hasBonus = checkWeeklyBonus(tasks, person, currentWeek);
     const failures = countFailures(tasks, person);
 
@@ -112,7 +113,7 @@ export default function Parents() {
                 <Badge variant="destructive" className="text-[9px]">Penalizado</Badge>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">{personTasks.length} tarefas {periodLabel}</p>
+            <p className="text-xs text-muted-foreground">{realTasks.length} tarefas {periodLabel}</p>
           </div>
           <div className="text-right">
             <p className="text-xl font-extrabold text-primary">€{earnings.toFixed(2)}</p>
@@ -120,7 +121,7 @@ export default function Parents() {
           </div>
         </div>
 
-        {personTasks.length > 0 && (
+        {realTasks.length > 0 && (
           <div className="grid grid-cols-3 gap-2">
             <div className="bg-primary/8 rounded-xl p-2 text-center">
               <p className="text-lg font-bold text-primary">{perfect}</p>

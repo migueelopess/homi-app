@@ -1,4 +1,4 @@
-import { COMPLETION_TYPES, PERSON_AVATARS, getTaskIcon } from '@/lib/taskHelpers';
+import { COMPLETION_TYPES, PERSON_AVATARS, getTaskIcon, isBonusTask } from '@/lib/taskHelpers';
 import { format, parse } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { motion } from 'framer-motion';
@@ -21,15 +21,22 @@ export default function RecentActivity({ tasks }) {
     <div className="space-y-2">
       {recent.map((task, i) => {
         const ct = COMPLETION_TYPES[task.completion_type];
+        const bonus = isBonusTask(task);
         return (
           <motion.div
             key={task.id}
             initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: i * 0.05 }}
-            className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border hover:border-primary/20 transition-colors"
+            className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+              bonus
+                ? 'bg-accent/10 border-accent/30'
+                : 'bg-card border-border hover:border-primary/20'
+            }`}
           >
-            <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl flex-shrink-0">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${
+              bonus ? 'bg-accent/20' : 'bg-muted'
+            }`}>
               {getTaskIcon(task.task_name)}
             </div>
             <div className="flex-1 min-w-0">
@@ -39,10 +46,10 @@ export default function RecentActivity({ tasks }) {
               </p>
             </div>
             <div className="text-right flex-shrink-0">
-              <p className={`text-sm font-bold ${ct?.color || 'text-foreground'}`}>
+              <p className={`text-sm font-bold ${bonus ? 'text-accent' : (ct?.color || 'text-foreground')}`}>
                 +€{(task.value || 0).toFixed(2)}
               </p>
-              <p className="text-[10px]">{ct?.emoji}</p>
+              <p className="text-[10px]">{bonus ? '🏆' : ct?.emoji}</p>
             </div>
           </motion.div>
         );

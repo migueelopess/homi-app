@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { TaskService } from '@/api/entities';
-import { PEOPLE, PERSON_AVATARS, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, isBonusTask } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -19,10 +19,19 @@ export default function Ranking() {
   const getRanking = (filteredTasks) => {
     return PEOPLE.map(person => {
       const personTasks = filteredTasks.filter(t => t.person === person);
-      const earnings = calculateEarnings(personTasks);
-      const bonus = checkWeeklyBonus(filteredTasks, person, currentWeek) ? WEEKLY_BONUS : 0;
-      const perfectTasks = personTasks.filter(t => t.completion_type === 'on_time_no_reminder').length;
-      return { person, earnings, bonus, total: earnings + bonus, taskCount: personTasks.length, perfectTasks };
+      const realTasks = personTasks.filter(t => !isBonusTask(t));
+      const bonusTasks = personTasks.filter(t => isBonusTask(t));
+
+      const earnings = calculateEarnings(realTasks);
+      const persistedBonus = calculateEarnings(bonusTasks);
+      const currentWeekBonusAlreadyPersisted = bonusTasks.some(t => t.week_key === currentWeek);
+      const pendingBonus = !currentWeekBonusAlreadyPersisted && checkWeeklyBonus(filteredTasks, person, currentWeek)
+        ? WEEKLY_BONUS
+        : 0;
+      const bonus = persistedBonus + pendingBonus;
+
+      const perfectTasks = realTasks.filter(t => t.completion_type === 'on_time_no_reminder').length;
+      return { person, earnings, bonus, total: earnings + bonus, taskCount: realTasks.length, perfectTasks };
     }).sort((a, b) => b.total - a.total);
   };
 

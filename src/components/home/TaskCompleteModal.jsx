@@ -124,12 +124,12 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
       setPhotoPreview(URL.createObjectURL(file));
       setCardVisible(true);
     } else {
-      // No file picked (cancel on some browsers fires change with empty files)
-      setCardVisible(true);
+      // No file picked — treat as cancel and dismiss the whole modal.
+      handleClose();
     }
   };
 
-  const handleCameraCancel = () => setCardVisible(true);
+  const handleCameraCancel = () => handleClose();
 
   const completionType = hasReminder
     ? (inTime ? 'on_time_with_reminder' : 'late')
@@ -148,10 +148,13 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
     const clickTimer = setTimeout(() => fileInputRef.current?.click(), 0);
     // Fallback for browsers that don't fire `cancel` on file inputs (iOS
     // Safari): if the window regains focus and no photo has been picked
-    // within ~400ms, assume the user dismissed the camera and show the card.
+    // within ~400ms, assume the user dismissed the camera and close the
+    // modal entirely — they likely tapped the task by accident.
     let focusTimer;
     const onFocus = () => {
-      focusTimer = setTimeout(() => setCardVisible(true), 400);
+      focusTimer = setTimeout(() => {
+        if (!fileInputRef.current?.files?.length) handleClose();
+      }, 400);
     };
     window.addEventListener('focus', onFocus);
     return () => {

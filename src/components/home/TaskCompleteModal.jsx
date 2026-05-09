@@ -23,6 +23,10 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
   const inTime = isExtended || isWithinTimeWindow(task?.start_time, task?.end_time);
   const [photo, setPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
+  // Hide modal contents until either the camera returns a photo or the user
+  // cancels the camera — avoids the card flashing in the background while the
+  // OS camera UI is opening.
+  const [cardVisible, setCardVisible] = useState(false);
   const fileInputRef = useRef(null);
 
   // Check if a parent sent a reminder for this task today
@@ -109,6 +113,7 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
   const handleClose = () => {
     setPhoto(null);
     setPhotoPreview(null);
+    setCardVisible(false);
     onClose();
   };
 
@@ -117,8 +122,14 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
     if (file) {
       setPhoto(file);
       setPhotoPreview(URL.createObjectURL(file));
+      setCardVisible(true);
+    } else {
+      // No file picked (cancel on some browsers fires change with empty files)
+      setCardVisible(true);
     }
   };
+
+  const handleCameraCancel = () => setCardVisible(true);
 
   const completionType = hasReminder
     ? (inTime ? 'on_time_with_reminder' : 'late')
@@ -126,18 +137,58 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
   const completionMeta = COMPLETION_TYPES[completionType];
   const completionValue = getDisplayValue(completionType);
 
-  // Auto-open the camera the first time the modal renders for a task
+  // Auto-open the camera as soon as the modal opens for a task. The card
+  // stays hidden until the camera returns (photo picked) or is cancelled.
   useEffect(() => {
-    if (!task) return;
-    if (photoPreview) return;
-    const t = setTimeout(() => fileInputRef.current?.click(), 150);
-    return () => clearTimeout(t);
+    if (!task) {
+      setCardVisible(false);
+      return;
+    }
+    setCardVisible(false);
+    const clickTimer = setTimeout(() => fileInputRef.current?.click(), 0);
+    // Fallback for browsers that don't fire `cancel` on file inputs (iOS
+    // Safari): if the window regains focus and no photo has been picked
+    // within ~400ms, assume the user dismissed the camera and show the card.
+    let focusTimer;
+    const onFocus = () => {
+      focusTimer = setTimeout(() => setCardVisible(true), 400);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearTimeout(clickTimer);
+      clearTimeout(focusTimer);
+      window.removeEventListener('focus', onFocus);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.task_name, task?.id]);
 
+  // Lock body scroll while the modal is open
+  useEffect(() => {
+    if (!task) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [task?.task_name, task?.id]);
+
   return (
-    <AnimatePresence>
+    <>
+      {/* Always-mounted hidden file input so we can trigger the camera before
+          the card animates in. */}
       {task && (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handlePhotoChange}
+          onCancel={handleCameraCancel}
+          className="hidden"
+        />
+      )}
+    <AnimatePresence>
+      {task && cardVisible && (
         <>
           <motion.div
             initial={{ opacity: 0 }}
@@ -208,15 +259,6 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
             <p className="text-sm font-semibold text-foreground mb-1">📸 Foto de prova obrigatória</p>
             <p className="text-xs text-muted-foreground mb-4">Tira uma foto a comprovar que fizeste a tarefa.</p>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              onChange={handlePhotoChange}
-              className="hidden"
-            />
-
             {photoPreview ? (
               <div className="mb-4">
                 <img src={photoPreview} alt="preview" className="w-full rounded-2xl object-cover max-h-52" />
@@ -252,5 +294,6 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
         </>
       )}
     </AnimatePresence>
+    </>
   );
 }

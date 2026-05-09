@@ -29,6 +29,65 @@ export const TaskService = {
     const { error } = await supabase.from('tasks').delete().eq('id', id);
     if (error) throw error;
   },
+
+  async listPending() {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('approval_status', 'pending')
+      .order('date', { ascending: false })
+      .order('created_date', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  async approve(id, approverId) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        approval_status: 'approved',
+        approved_at: new Date().toISOString(),
+        approved_by: approverId ?? null,
+      })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  // Rejection is final: value goes to 0 and completion_type becomes not_done
+  // so all existing earnings/bonus/failure logic flows naturally.
+  async reject(id, approverId) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        approval_status: 'rejected',
+        approved_at: new Date().toISOString(),
+        approved_by: approverId ?? null,
+        value: 0,
+        completion_type: 'not_done',
+      })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async bulkApprove(ids, approverId) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        approval_status: 'approved',
+        approved_at: new Date().toISOString(),
+        approved_by: approverId ?? null,
+      })
+      .in('id', ids)
+      .select();
+    if (error) throw error;
+    return data;
+  },
 };
 
 export const ScheduledTaskService = {

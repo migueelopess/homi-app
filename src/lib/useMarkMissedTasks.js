@@ -76,6 +76,7 @@ export function useMarkMissedTasks({ scheduledTasks, tasks, person, enabled }) {
               date: dateStr,
               week_key: getWeekKey(date),
               month_key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+              approval_status: 'approved',
             });
 
             // Notify parents about missed task (only for yesterday)

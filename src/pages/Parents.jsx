@@ -4,6 +4,7 @@ import { TaskService } from '@/api/entities';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { Lock, Shield, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Star, Loader2 } from 'lucide-react';
 import PhotoModal from '@/components/parents/PhotoModal';
+import ApprovalsTab from '@/components/parents/ApprovalsTab';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { supabase } from '@/api/supabaseClient';
 import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask } from '@/lib/taskHelpers';
@@ -29,6 +30,13 @@ export default function Parents() {
     queryKey: ['tasks'],
     queryFn: () => TaskService.list('-created_date', 500),
   });
+
+  const { data: pendingTasks = [] } = useQuery({
+    queryKey: ['pendingTasks'],
+    queryFn: () => TaskService.listPending(),
+    enabled: isParent(user),
+  });
+  const pendingCount = pendingTasks.length;
 
   const deleteMutation = useMutation({
     mutationFn: (id) => TaskService.delete(id),
@@ -176,11 +184,23 @@ export default function Parents() {
         <p className="text-sm text-muted-foreground mb-5">Desempenho e valores a pagar</p>
       </motion.div>
 
-      <Tabs defaultValue="week" className="w-full">
-        <TabsList className="w-full grid grid-cols-2 mb-5 h-11 rounded-xl">
-          <TabsTrigger value="week" className="rounded-lg font-semibold">Esta Semana</TabsTrigger>
-          <TabsTrigger value="month" className="rounded-lg font-semibold">Este Mês</TabsTrigger>
+      <Tabs defaultValue="approvals" className="w-full">
+        <TabsList className="w-full grid grid-cols-3 mb-5 h-11 rounded-xl">
+          <TabsTrigger value="approvals" className="rounded-lg font-semibold gap-1.5">
+            Aprovações
+            {pendingCount > 0 && (
+              <Badge className="bg-amber-500 text-white text-[10px] border-0 px-1.5 h-4 leading-none">
+                {pendingCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="week" className="rounded-lg font-semibold">Semana</TabsTrigger>
+          <TabsTrigger value="month" className="rounded-lg font-semibold">Mês</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="approvals" className="space-y-3">
+          <ApprovalsTab approverId={user?.id} />
+        </TabsContent>
 
         <TabsContent value="week" className="space-y-3">
           <PaymentSummary filteredTasks={weekTasks} />
@@ -274,16 +294,26 @@ export default function Parents() {
                 <div className="px-4 pb-4 space-y-2">
                   {personTasks.slice(0, 20).map(task => {
                     const ct = COMPLETION_TYPES[task.completion_type];
+                    const isPending = task.approval_status === 'pending';
+                    const isRejected = task.approval_status === 'rejected';
                     return (
                       <div key={task.id} className="flex items-center gap-2 p-2 rounded-lg bg-muted text-sm">
                         <span>{getTaskIcon(task.task_name)}</span>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium truncate">{task.task_name}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-medium truncate">{task.task_name}</p>
+                            {isPending && (
+                              <Badge className="bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[9px] border-0 px-1.5 leading-none">Pendente</Badge>
+                            )}
+                            {isRejected && (
+                              <Badge className="bg-destructive/15 text-destructive text-[9px] border-0 px-1.5 leading-none">Rejeitada</Badge>
+                            )}
+                          </div>
                           <p className="text-[10px] text-muted-foreground">
                             {task.date ? format(parse(task.date, 'yyyy-MM-dd', new Date()), "d MMM yyyy", { locale: pt }) : ''}
                           </p>
                         </div>
-                        <span className={`font-bold ${ct?.color}`}>€{(task.value || 0).toFixed(2)}</span>
+                        <span className={`font-bold ${ct?.color} ${isPending ? 'opacity-50' : ''} ${isRejected ? 'line-through opacity-60' : ''}`}>€{(task.value || 0).toFixed(2)}</span>
                         <div className="flex gap-1">
                           {task.photo_url && (
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPhotoUrl(task.photo_url)}>

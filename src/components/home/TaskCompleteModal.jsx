@@ -90,7 +90,7 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
         queryClient.invalidateQueries({ queryKey: ['occasionalTasks'] });
         queryClient.invalidateQueries({ queryKey: ['taskDelegations'] });
       }
-      toast.success('Tarefa concluída! 🎉');
+      toast.success('Tarefa enviada — à espera de aprovação 📸');
       handleClose();
     },
   });

@@ -130,8 +130,18 @@ export function getTaskValue(taskName, completionType) {
   return COMPLETION_TYPES[completionType]?.value ?? 0;
 }
 
+// Tasks pending approval don't yet count toward earnings.
+// Rejected tasks were normalized to value=0 by TaskService.reject so they
+// contribute 0 either way, but we still filter to be explicit.
+export function isCountableForEarnings(task) {
+  return !task.approval_status || task.approval_status === 'approved';
+}
+
 export function calculateEarnings(tasks) {
-  return tasks.reduce((sum, t) => sum + (t.value || 0), 0);
+  return tasks.reduce(
+    (sum, t) => sum + (isCountableForEarnings(t) ? (t.value || 0) : 0),
+    0
+  );
 }
 
 export function getPersonTasks(tasks, person) {
@@ -151,6 +161,8 @@ export function checkWeeklyBonus(tasks, person, weekKey) {
     t => t.person === person && t.week_key === weekKey && !isBonusTask(t)
   );
   if (personWeekTasks.length === 0) return false;
+  // If any task is still awaiting approval, bonus eligibility is undecided.
+  if (personWeekTasks.some(t => t.approval_status === 'pending')) return false;
   return personWeekTasks.every(t => t.completion_type !== 'not_done');
 }
 

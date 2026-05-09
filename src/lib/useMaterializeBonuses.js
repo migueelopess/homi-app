@@ -41,6 +41,8 @@ export function useMaterializeBonuses({ tasks, enabled = true }) {
           t => t.person === person && t.week_key === weekKey && !isBonusTask(t)
         );
         if (personWeekTasks.length === 0) continue;
+        // Wait for parents to decide on every photo before we materialize.
+        if (personWeekTasks.some(t => t.approval_status === 'pending')) continue;
         const shouldHaveBonus = personWeekTasks.every(t => t.completion_type !== 'not_done');
         const existingBonus = tasks.find(
           t => t.person === person && t.week_key === weekKey && isBonusTask(t)
@@ -69,6 +71,7 @@ export function useMaterializeBonuses({ tasks, enabled = true }) {
             date: getLocalDateStr(endDate),
             week_key: weekKey,
             month_key: `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}`,
+            approval_status: 'approved',
           });
         }
         for (const id of toDelete) {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { TaskDelegationService, TaskExtensionService } from '@/api/entities';
+import { TaskDelegationService, TaskExtensionService, TaskCancellationService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { Clock, CheckCircle2, Circle, Star, ArrowRightLeft } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -59,6 +59,15 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
     queryFn: () => TaskExtensionService.getByDate(today),
   });
 
+  // Fetch cancellations for today (parents may cancel a task for a child)
+  const { data: cancellations = [] } = useQuery({
+    queryKey: ['taskCancellations', today],
+    queryFn: () => TaskCancellationService.getByDate(today),
+  });
+
+  const isCancelled = (taskName) =>
+    cancellations.some(c => c.person === person && c.task_name === taskName);
+
   const todayDelegations = delegations.filter(d => d.task_date === today);
 
   // Tasks I delegated away (pending or accepted) — hide from my schedule
@@ -75,12 +84,16 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
     .filter(t => t.person === person && t.days_of_week?.includes(todayKey))
     // Hide tasks I delegated away
     .filter(t => !myDelegatedAway.some(d => d.task_type === 'scheduled' && d.scheduled_task_id === t.id))
+    // Hide tasks cancelled by parents for today
+    .filter(t => !isCancelled(t.task_name))
     .sort((a, b) => (a.start_time || '00:00').localeCompare(b.start_time || '00:00'));
 
   const todayOccasional = occasionalTasks
     .filter(t => t.person === person && t.date === today && !t.completed)
     // Hide occasional tasks I delegated away
     .filter(t => !myDelegatedAway.some(d => d.task_type === 'occasional' && d.occasional_task_id === t.id))
+    // Hide tasks cancelled by parents for today
+    .filter(t => !isCancelled(t.task_name))
     .sort((a, b) => (a.end_time || '99:99').localeCompare(b.end_time || '99:99'));
 
   // Build delegated-to-me tasks as card items

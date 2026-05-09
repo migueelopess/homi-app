@@ -237,6 +237,32 @@ export const TaskExtensionService = {
   },
 };
 
+export const TaskCancellationService = {
+  async getByDate(date) {
+    const { data, error } = await supabase
+      .from('task_cancellations')
+      .select('*')
+      .eq('task_date', date);
+    if (error) throw error;
+    return data;
+  },
+
+  async create(record) {
+    const { data, error } = await supabase
+      .from('task_cancellations')
+      .insert(record)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async delete(id) {
+    const { error } = await supabase.from('task_cancellations').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
 export const CleanupLogService = {
   async getLastCleanupDate() {
     const { data, error } = await supabase

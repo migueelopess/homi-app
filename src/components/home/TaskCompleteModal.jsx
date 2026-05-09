@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { TaskService, TaskReminderService, OccasionalTaskService } from '@/api/entities';
+import { sendPushNotification } from '@/api/supabaseClient';
 import { uploadTaskPhoto } from '@/api/storage';
 import { COMPLETION_TYPES, SIDNEY_TASKS, getWeekKey, getCurrentMonthKey, TASK_ICONS, PERSON_AVATARS, getLocalDateStr } from '@/lib/taskHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -82,7 +83,18 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
       if (occasionalTaskId) {
         promises.push(OccasionalTaskService.update(occasionalTaskId, { completed: true }));
       }
-      return Promise.all(promises);
+      const result = await Promise.all(promises);
+
+      // Notify parents that the child submitted a task (awaiting their approval).
+      sendPushNotification({
+        person: '__parents__',
+        title: '📸 Tarefa para aprovar',
+        body: `${person} fez "${task.task_name}"`,
+        url: '/pais',
+        tag: `task-submitted-${person}-${task.task_name}-${today}`,
+      });
+
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });

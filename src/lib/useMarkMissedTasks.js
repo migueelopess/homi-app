@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { TaskService, TaskDelegationService, CleanupLogService } from '@/api/entities';
+import { TaskService, TaskDelegationService, TaskCancellationService, CleanupLogService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { getWeekKey, getCurrentMonthKey } from './taskHelpers';
 
@@ -35,6 +35,22 @@ export function useMarkMissedTasks({ scheduledTasks, tasks, person, enabled }) {
         // If table doesn't exist yet, continue without
       }
 
+      // Fetch cancellations for the last 7 days so we don't mark cancelled tasks as missed
+      let cancellations = [];
+      try {
+        const results = await Promise.all(
+          Array.from({ length: 7 }, (_, i) => {
+            const d = new Date(today);
+            d.setDate(today.getDate() - (i + 1));
+            const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            return TaskCancellationService.getByDate(ds);
+          })
+        );
+        cancellations = results.flat();
+      } catch (e) {
+        // If table doesn't exist yet, continue without
+      }
+
       for (let daysBack = 1; daysBack <= 7; daysBack++) {
         const date = new Date(today);
         date.setDate(today.getDate() - daysBack);
@@ -62,6 +78,14 @@ export function useMarkMissedTasks({ scheduledTasks, tasks, person, enabled }) {
                  d.status === 'accepted'
           );
           if (wasDelegated) continue;
+
+          // Skip tasks cancelled by parents for that date
+          const wasCancelled = cancellations.some(
+            c => c.person === person &&
+                 c.task_name === scheduledTask.task_name &&
+                 c.task_date === dateStr
+          );
+          if (wasCancelled) continue;
 
           const alreadyRecorded = tasks.some(
             t => t.person === person && t.task_name === scheduledTask.task_name && t.date === dateStr

@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ScheduledTaskService, OccasionalTaskService, TaskService, TaskReminderService, TaskDelegationService, TaskExtensionService } from '@/api/entities';
+import { ScheduledTaskService, OccasionalTaskService, TaskService, TaskReminderService, TaskDelegationService, TaskExtensionService, TaskCancellationService } from '@/api/entities';
 import { sendTaskReminder } from '@/api/pushNotifications';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { useAuth } from '@/lib/AuthContext';
 import { PEOPLE, PERSON_AVATARS, TASK_ICONS, getLocalDateStr } from '@/lib/taskHelpers';
-import { Lock, ChevronLeft, ChevronRight, Bell, BellRing, Clock, X, ArrowRightLeft, TimerReset } from 'lucide-react';
+import { Lock, ChevronLeft, ChevronRight, Bell, BellRing, Clock, X, ArrowRightLeft, TimerReset, Ban } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -70,6 +70,11 @@ export default function Tarefas() {
     queryFn: () => TaskExtensionService.getByDate(dateStr),
   });
 
+  const { data: cancellations = [], isLoading: loadingCancellations } = useQuery({
+    queryKey: ['taskCancellations', dateStr],
+    queryFn: () => TaskCancellationService.getByDate(dateStr),
+  });
+
   const todayDelegations = delegations.filter(d => d.task_date === dateStr);
 
   const extendTaskMutation = useMutation({
@@ -107,6 +112,38 @@ export default function Tarefas() {
         toast.error('Erro ao estender tarefa');
       }
     },
+  });
+
+  const cancelTaskMutation = useMutation({
+    mutationFn: ({ person, taskName }) =>
+      TaskCancellationService.create({
+        person,
+        task_name: taskName,
+        task_date: dateStr,
+        cancelled_by: session?.user?.id,
+      }),
+    onSuccess: (_, { person, taskName }) => {
+      queryClient.invalidateQueries({ queryKey: ['taskCancellations', dateStr] });
+      toast.success(`Tarefa "${taskName}" cancelada para ${person}`);
+      setSelectedTask(null);
+    },
+    onError: (err) => {
+      if (err?.code === '23505') {
+        toast.error('Esta tarefa já foi cancelada hoje.');
+      } else {
+        toast.error('Erro ao cancelar tarefa');
+      }
+    },
+  });
+
+  const uncancelTaskMutation = useMutation({
+    mutationFn: ({ id }) => TaskCancellationService.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['taskCancellations', dateStr] });
+      toast.success('Cancelamento removido');
+      setSelectedTask(null);
+    },
+    onError: () => toast.error('Erro ao reativar tarefa'),
   });
 
   const sendReminderMutation = useMutation({
@@ -154,6 +191,7 @@ export default function Tarefas() {
             d => d.task_type === 'scheduled' && d.scheduled_task_id === t.id && d.from_person === person
           );
           const extension = extensions.find(e => e.person === person && e.task_name === t.task_name);
+          const cancellation = cancellations.find(c => c.person === person && c.task_name === t.task_name);
           const overdue = isOverdue(t.end_time, dateStr);
           return {
             ...t,
@@ -164,6 +202,8 @@ export default function Tarefas() {
             _extended: !!extension,
             _extension: extension || null,
             _delegation: delegation || null,
+            _cancelled: !!cancellation,
+            _cancellation: cancellation || null,
           };
         });
 
@@ -174,6 +214,7 @@ export default function Tarefas() {
             d => d.task_type === 'occasional' && d.occasional_task_id === t.id && d.from_person === person
           );
           const extension = extensions.find(e => e.person === person && e.task_name === t.task_name);
+          const cancellation = cancellations.find(c => c.person === person && c.task_name === t.task_name);
           const overdue = isOverdue(t.end_time, dateStr);
           return {
             ...t,
@@ -184,6 +225,8 @@ export default function Tarefas() {
             _extended: !!extension,
             _extension: extension || null,
             _delegation: delegation || null,
+            _cancelled: !!cancellation,
+            _cancellation: cancellation || null,
           };
         });
 
@@ -196,6 +239,7 @@ export default function Tarefas() {
           if (!originalTask) return null;
 
           const extension = extensions.find(e => e.person === person && e.task_name === d.task_name);
+          const cancellation = cancellations.find(c => c.person === person && c.task_name === d.task_name);
           const overdue = isOverdue(originalTask.end_time, dateStr);
 
           return {
@@ -209,6 +253,8 @@ export default function Tarefas() {
             _extended: !!extension,
             _extension: extension || null,
             _delegation: { ...d, _isReceived: true },
+            _cancelled: !!cancellation,
+            _cancellation: cancellation || null,
           };
         })
         .filter(Boolean);
@@ -218,9 +264,9 @@ export default function Tarefas() {
       );
     }
     return result;
-  }, [scheduledTasks, occasionalTasks, completedTasks, reminders, extensions, todayDelegations, dayKey, dateStr]);
+  }, [scheduledTasks, occasionalTasks, completedTasks, reminders, extensions, cancellations, todayDelegations, dayKey, dateStr]);
 
-  if (loadingUser || loadingSched || loadingOcc || loadingTasks || loadingReminders || loadingDelegations || loadingExtensions) {
+  if (loadingUser || loadingSched || loadingOcc || loadingTasks || loadingReminders || loadingDelegations || loadingExtensions || loadingCancellations) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
@@ -306,8 +352,8 @@ export default function Tarefas() {
                     key={`${task.task_name}-${idx}`}
                     onClick={() => !task._done && setSelectedTask({ ...task, person })}
                     className={`p-3 flex items-center gap-3 transition-all ${
-                      task._done
-                        ? 'opacity-50'
+                      task._done || task._cancelled
+                        ? 'opacity-50 cursor-pointer'
                         : 'cursor-pointer hover:border-primary/40 active:scale-[0.98]'
                     }`}
                   >
@@ -356,6 +402,11 @@ export default function Tarefas() {
                     {task._done ? (
                       <Badge className="bg-green-500/10 text-green-600 text-[10px] flex-shrink-0">
                         Feita
+                      </Badge>
+                    ) : task._cancelled ? (
+                      <Badge className="bg-muted text-muted-foreground text-[10px] flex-shrink-0 flex items-center gap-1">
+                        <Ban className="w-3 h-3" />
+                        Cancelada
                       </Badge>
                     ) : task._extended ? (
                       <Badge className="bg-amber-500/10 text-amber-600 text-[10px] flex-shrink-0">
@@ -430,6 +481,11 @@ export default function Tarefas() {
                     {selectedTask._extension?.with_reminder && ' (com lembrete)'}
                   </div>
                 )}
+                {selectedTask._cancelled && (
+                  <div className="bg-muted rounded-xl p-3 text-sm text-muted-foreground text-center font-medium">
+                    🚫 Esta tarefa foi cancelada para hoje
+                  </div>
+                )}
                 {selectedTask._reminded && (
                   <div className="bg-amber-500/10 rounded-xl p-3 text-sm text-amber-600 text-center font-medium">
                     🔔 Já enviaste um lembrete para esta tarefa
@@ -438,7 +494,7 @@ export default function Tarefas() {
               </div>
 
               {/* Overdue: show extension options */}
-              {selectedTask._overdue && !selectedTask._extended && (
+              {!selectedTask._cancelled && selectedTask._overdue && !selectedTask._extended && (
                 <div className="space-y-2 mb-3">
                   <p className="text-xs text-muted-foreground text-center font-medium mb-2">
                     Dar mais tempo a {selectedTask.person} para concluir:
@@ -475,7 +531,7 @@ export default function Tarefas() {
               )}
 
               {/* Non-overdue or already extended: show reminder button */}
-              {(!selectedTask._overdue || selectedTask._extended) && (
+              {!selectedTask._cancelled && (!selectedTask._overdue || selectedTask._extended) && (
                 <>
                   <button
                     disabled={selectedTask._reminded || selectedTask._done || sendReminderMutation.isPending}
@@ -511,6 +567,41 @@ export default function Tarefas() {
                     </p>
                   )}
                 </>
+              )}
+
+              {/* Cancel / Uncancel task for this day */}
+              {!selectedTask._done && (
+                <div className="mt-3 pt-3 border-t border-border">
+                  {selectedTask._cancelled ? (
+                    <button
+                      disabled={uncancelTaskMutation.isPending}
+                      onClick={() => uncancelTaskMutation.mutate({ id: selectedTask._cancellation.id })}
+                      className="w-full py-3 rounded-2xl bg-muted text-foreground font-medium text-sm disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      <TimerReset className="w-4 h-4" />
+                      Reativar tarefa
+                    </button>
+                  ) : (
+                    <button
+                      disabled={cancelTaskMutation.isPending}
+                      onClick={() =>
+                        cancelTaskMutation.mutate({
+                          person: selectedTask.person,
+                          taskName: selectedTask.task_name,
+                        })
+                      }
+                      className="w-full py-3 rounded-2xl bg-destructive/10 text-destructive font-bold text-sm disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      <Ban className="w-4 h-4" />
+                      Cancelar tarefa hoje
+                    </button>
+                  )}
+                  <p className="text-[11px] text-muted-foreground text-center mt-2">
+                    {selectedTask._cancelled
+                      ? 'A tarefa volta a aparecer no horário.'
+                      : `${selectedTask.person} não vai ver esta tarefa e não conta como falhada.`}
+                  </p>
+                </div>
               )}
             </motion.div>
           </>

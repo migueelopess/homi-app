@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { TaskService, TaskReminderService, OccasionalTaskService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
@@ -21,7 +21,6 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
   const today = getLocalDateStr();
   // If parent extended this task, treat it as still within time window
   const inTime = isExtended || isWithinTimeWindow(task?.start_time, task?.end_time);
-  const [selectedType, setSelectedType] = useState(null);
   const [photo, setPhoto] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const fileInputRef = useRef(null);
@@ -108,7 +107,6 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
   });
 
   const handleClose = () => {
-    setSelectedType(null);
     setPhoto(null);
     setPhotoPreview(null);
     onClose();
@@ -122,9 +120,20 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
     }
   };
 
-  const options = hasReminder
-    ? (inTime ? ['on_time_with_reminder'] : ['late'])
-    : (inTime ? ['on_time_no_reminder'] : ['late']);
+  const completionType = hasReminder
+    ? (inTime ? 'on_time_with_reminder' : 'late')
+    : (inTime ? 'on_time_no_reminder' : 'late');
+  const completionMeta = COMPLETION_TYPES[completionType];
+  const completionValue = getDisplayValue(completionType);
+
+  // Auto-open the camera the first time the modal renders for a task
+  useEffect(() => {
+    if (!task) return;
+    if (photoPreview) return;
+    const t = setTimeout(() => fileInputRef.current?.click(), 150);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.task_name, task?.id]);
 
   return (
     <AnimatePresence>
@@ -186,89 +195,59 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
               </div>
             )}
 
-            {/* Step 1: choose completion type */}
-            {!selectedType && (
-              <>
-                <p className="text-sm text-muted-foreground mb-3 font-medium">Como fizeste esta tarefa?</p>
-                <div className="space-y-2">
-                  {options.map(key => {
-                    const ct = COMPLETION_TYPES[key];
-                    const displayVal = getDisplayValue(key);
-                    return (
-                      <button
-                        key={key}
-                        onClick={() => {
-                          setSelectedType(key);
-                          setTimeout(() => fileInputRef.current?.click(), 100);
-                        }}
-                        className="w-full flex items-center gap-3 p-4 rounded-2xl border-2 border-border bg-background hover:border-primary/40 hover:bg-primary/5 transition-all text-left"
-                      >
-                        <span className="text-2xl">{ct.emoji}</span>
-                        <div className="flex-1">
-                          <p className="font-semibold text-foreground">{ct.label}</p>
-                        </div>
-                        <span className={`text-sm font-bold ${ct.color}`}>+€{displayVal.toFixed(2)}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
+            {/* Auto-derived completion type — single tap flow */}
+            <div className="flex items-center gap-3 p-3 rounded-2xl border border-border bg-muted/40 mb-4">
+              <span className="text-2xl">{completionMeta.emoji}</span>
+              <div className="flex-1">
+                <p className="text-xs text-muted-foreground">Vai ser registado como</p>
+                <p className="font-semibold text-sm text-foreground">{completionMeta.label}</p>
+              </div>
+              <span className={`text-sm font-bold ${completionMeta.color}`}>+€{completionValue.toFixed(2)}</span>
+            </div>
+
+            <p className="text-sm font-semibold text-foreground mb-1">📸 Foto de prova obrigatória</p>
+            <p className="text-xs text-muted-foreground mb-4">Tira uma foto a comprovar que fizeste a tarefa.</p>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoChange}
+              className="hidden"
+            />
+
+            {photoPreview ? (
+              <div className="mb-4">
+                <img src={photoPreview} alt="preview" className="w-full rounded-2xl object-cover max-h-52" />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-2 w-full py-2 rounded-xl border border-border text-xs text-muted-foreground hover:bg-muted transition-colors"
+                >
+                  Tirar outra foto
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full flex flex-col items-center gap-3 p-8 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 mb-4"
+              >
+                <Camera className="w-8 h-8 text-primary" />
+                <span className="text-sm font-medium text-primary">Toca para abrir a câmara</span>
+              </button>
             )}
 
-            {/* Step 2: take photo */}
-            {selectedType && (
-              <>
-                <p className="text-sm font-semibold text-foreground mb-1">📸 Foto de prova obrigatória</p>
-                <p className="text-xs text-muted-foreground mb-4">Tira uma foto a comprovar que fizeste a tarefa.</p>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handlePhotoChange}
-                  className="hidden"
-                />
-
-                {photoPreview ? (
-                  <div className="mb-4">
-                    <img src={photoPreview} alt="preview" className="w-full rounded-2xl object-cover max-h-52" />
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="mt-2 w-full py-2 rounded-xl border border-border text-xs text-muted-foreground hover:bg-muted transition-colors"
-                    >
-                      Tirar outra foto
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full flex flex-col items-center gap-3 p-8 rounded-2xl border-2 border-dashed border-primary/40 bg-primary/5 mb-4"
-                  >
-                    <Camera className="w-8 h-8 text-primary" />
-                    <span className="text-sm font-medium text-primary">Toca para abrir a câmara</span>
-                  </button>
-                )}
-
-                <button
-                  disabled={!photo || createMutation.isPending}
-                  onClick={() => createMutation.mutate(selectedType)}
-                  className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-bold text-sm disabled:opacity-40 flex items-center justify-center gap-2"
-                >
-                  {createMutation.isPending ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> A guardar...</>
-                  ) : (
-                    '✅ Confirmar Tarefa'
-                  )}
-                </button>
-                <button
-                  onClick={() => { setSelectedType(null); setPhoto(null); setPhotoPreview(null); }}
-                  className="w-full py-3 mt-2 rounded-2xl bg-muted text-muted-foreground font-medium text-sm"
-                >
-                  Voltar
-                </button>
-              </>
-            )}
+            <button
+              disabled={!photo || createMutation.isPending}
+              onClick={() => createMutation.mutate(completionType)}
+              className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-bold text-sm disabled:opacity-40 flex items-center justify-center gap-2"
+            >
+              {createMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> A guardar...</>
+              ) : (
+                '✅ Confirmar Tarefa'
+              )}
+            </button>
           </motion.div>
         </>
       )}

@@ -22,6 +22,7 @@ export default function RecentActivity({ tasks }) {
       {recent.map((task, i) => {
         const ct = COMPLETION_TYPES[task.completion_type];
         const bonus = isBonusTask(task);
+        const missed = task.completion_type === 'not_done';
         return (
           <motion.div
             key={task.id}
@@ -31,25 +32,33 @@ export default function RecentActivity({ tasks }) {
             className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
               bonus
                 ? 'bg-accent/10 border-accent/30'
-                : 'bg-card border-border hover:border-primary/20'
+                : missed
+                  ? 'bg-destructive/5 border-destructive/30'
+                  : 'bg-card border-border hover:border-primary/20'
             }`}
           >
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${
-              bonus ? 'bg-accent/20' : 'bg-muted'
+              bonus ? 'bg-accent/20' : missed ? 'bg-destructive/10' : 'bg-muted'
             }`}>
               {getTaskIcon(task.task_name)}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{task.task_name}</p>
+              <p className={`text-sm font-medium truncate ${missed ? 'text-muted-foreground line-through' : 'text-foreground'}`}>{task.task_name}</p>
               <p className="text-[11px] text-muted-foreground">
                 {task.person} · {task.date ? format(parse(task.date, 'yyyy-MM-dd', new Date()), "d MMM", { locale: pt }) : ''}
               </p>
             </div>
             <div className="text-right flex-shrink-0">
-              <p className={`text-sm font-bold ${bonus ? 'text-accent' : (ct?.color || 'text-foreground')}`}>
-                +€{(task.value || 0).toFixed(2)}
-              </p>
-              <p className="text-[10px]">{bonus ? '🏆' : ct?.emoji}</p>
+              {missed ? (
+                <p className="text-base font-extrabold text-destructive leading-none">✕</p>
+              ) : (
+                <>
+                  <p className={`text-sm font-bold ${bonus ? 'text-accent' : (ct?.color || 'text-foreground')}`}>
+                    +€{(task.value || 0).toFixed(2)}
+                  </p>
+                  <p className="text-[10px]">{bonus ? '🏆' : ct?.emoji}</p>
+                </>
+              )}
             </div>
           </motion.div>
         );

@@ -296,24 +296,32 @@ export default function Parents() {
                     const ct = COMPLETION_TYPES[task.completion_type];
                     const isPending = task.approval_status === 'pending';
                     const isRejected = task.approval_status === 'rejected';
+                    const isMissed = task.completion_type === 'not_done' && !isRejected;
                     return (
-                      <div key={task.id} className="flex items-center gap-2 p-2 rounded-lg bg-muted text-sm">
+                      <div key={task.id} className={`flex items-center gap-2 p-2 rounded-lg text-sm ${isMissed ? 'bg-destructive/5 border border-destructive/20' : 'bg-muted'}`}>
                         <span>{getTaskIcon(task.task_name)}</span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <p className="font-medium truncate">{task.task_name}</p>
+                            <p className={`font-medium truncate ${isMissed ? 'line-through text-muted-foreground' : ''}`}>{task.task_name}</p>
                             {isPending && (
                               <Badge className="bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[9px] border-0 px-1.5 leading-none">Pendente</Badge>
                             )}
                             {isRejected && (
                               <Badge className="bg-destructive/15 text-destructive text-[9px] border-0 px-1.5 leading-none">Rejeitada</Badge>
                             )}
+                            {isMissed && (
+                              <Badge className="bg-destructive/15 text-destructive text-[9px] border-0 px-1.5 leading-none">Falhou</Badge>
+                            )}
                           </div>
                           <p className="text-[10px] text-muted-foreground">
                             {task.date ? format(parse(task.date, 'yyyy-MM-dd', new Date()), "d MMM yyyy", { locale: pt }) : ''}
                           </p>
                         </div>
-                        <span className={`font-bold ${ct?.color} ${isPending ? 'opacity-50' : ''} ${isRejected ? 'line-through opacity-60' : ''}`}>€{(task.value || 0).toFixed(2)}</span>
+                        {isMissed ? (
+                          <span className="text-base font-extrabold text-destructive leading-none px-1">✕</span>
+                        ) : (
+                          <span className={`font-bold ${ct?.color} ${isPending ? 'opacity-50' : ''} ${isRejected ? 'line-through opacity-60' : ''}`}>€{(task.value || 0).toFixed(2)}</span>
+                        )}
                         <div className="flex gap-1">
                           {task.photo_url && (
                             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setPhotoUrl(task.photo_url)}>

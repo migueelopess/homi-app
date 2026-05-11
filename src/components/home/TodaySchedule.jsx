@@ -239,7 +239,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
               transition={{ delay: i * 0.05 }}
             >
               <Card
-                onClick={() => setSelectedTask({ ...d, person, _delegated: true, _from: d.from_person, _occasional: true })}
+                onClick={() => setSelectedTask({ ...d, person, _delegated: true, _from: d.from_person, _occasional: true, _isExtended: isExtended })}
                 className={`p-3 flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-all border-blue-500/30 bg-blue-500/5 ${
                   overdue ? 'border-destructive/40 bg-destructive/5' : ''
                 }`}
@@ -345,7 +345,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
               transition={{ delay: i * 0.05 }}
             >
               <Card
-                onClick={() => !isDone && setSelectedTask({ ...d, person, _delegated: true, _from: d.from_person, task_name: d.task_name, end_time: d.end_time })}
+                onClick={() => !isDone && setSelectedTask({ ...d, person, _delegated: true, _from: d.from_person, task_name: d.task_name, end_time: d.end_time, _isExtended: isExtended })}
                 className={`p-3 flex items-center gap-3 transition-all ${
                   isDone ? 'opacity-60 bg-muted/50' :
                   overdue ? 'border-destructive/40 bg-destructive/5 cursor-pointer active:scale-[0.98]' :

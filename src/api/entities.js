@@ -51,8 +51,9 @@ export const TaskService = {
       })
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
     if (error) throw error;
+    if (!data) throw new Error(`approve: tarefa ${id} não foi atualizada (RLS ou linha inexistente)`);
     return data;
   },
 
@@ -70,8 +71,9 @@ export const TaskService = {
       })
       .eq('id', id)
       .select()
-      .single();
+      .maybeSingle();
     if (error) throw error;
+    if (!data) throw new Error(`reject: tarefa ${id} não foi atualizada (RLS ou linha inexistente)`);
     return data;
   },
 
@@ -86,6 +88,9 @@ export const TaskService = {
       .in('id', ids)
       .select();
     if (error) throw error;
+    if (!data || data.length < ids.length) {
+      throw new Error(`bulkApprove: pedido ${ids.length} tarefas, atualizado ${data?.length ?? 0} (RLS a bloquear UPDATE)`);
+    }
     return data;
   },
 };

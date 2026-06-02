@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { TaskService } from '@/api/entities';
+import { TaskService, PaymentService } from '@/api/entities';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
-import { Lock, Shield, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Star, Loader2 } from 'lucide-react';
+import { Lock, Shield, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Star, Loader2, Wallet, Check } from 'lucide-react';
 import PhotoModal from '@/components/parents/PhotoModal';
 import ApprovalsTab from '@/components/parents/ApprovalsTab';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { supabase } from '@/api/supabaseClient';
-import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, getLocalDateStr } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -38,11 +38,38 @@ export default function Parents() {
   });
   const pendingCount = pendingTasks.length;
 
+  const { data: lastPaidDates = {} } = useQuery({
+    queryKey: ['payments', 'last-dates'],
+    queryFn: () => PaymentService.getLastPaidDates(),
+    enabled: isParent(user),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id) => TaskService.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       toast.success('Tarefa removida');
+    },
+  });
+
+  const payMutation = useMutation({
+    mutationFn: async ({ persons }) => {
+      const today = getLocalDateStr();
+      const rows = persons.map((person) => ({
+        person,
+        paid_through_date: today,
+        paid_by: user?.id ?? null,
+      }));
+      return PaymentService.createBulk(rows);
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['payments', 'last-dates'] });
+      const label = vars.persons.length === 1 ? vars.persons[0] : 'todos os filhos';
+      toast.success(`Pagamento registado para ${label}`);
+    },
+    onError: (err) => {
+      console.error('Payment failed:', err);
+      toast.error('Erro ao registar pagamento');
     },
   });
 
@@ -79,6 +106,22 @@ export default function Parents() {
 
   const weekTasks = getWeekTasks(tasks, currentWeek);
   const monthTasks = getMonthTasks(tasks, currentMonth);
+
+  // Per-person unpaid balance: sum task values where date > last paid_through_date.
+  // Excludes pending tasks (not yet approved) to avoid paying for work that may be rejected.
+  const computeUnpaid = (person) => {
+    const lastPaid = lastPaidDates[person] || null;
+    const unpaid = tasks.filter(
+      (t) =>
+        t.person === person &&
+        t.approval_status !== 'pending' &&
+        (!lastPaid || t.date > lastPaid)
+    );
+    return calculateEarnings(unpaid);
+  };
+  const unpaidByPerson = Object.fromEntries(PEOPLE.map((p) => [p, computeUnpaid(p)]));
+  const unpaidTotal = Object.values(unpaidByPerson).reduce((s, v) => s + v, 0);
+  const personsWithDebt = PEOPLE.filter((p) => unpaidByPerson[p] > 0);
 
   if (isLoading || loadingUser) {
     return (
@@ -183,6 +226,102 @@ export default function Parents() {
         </div>
         <p className="text-sm text-muted-foreground mb-5">Desempenho e valores a pagar</p>
       </motion.div>
+
+      {/* Por pagar — saldo acumulado (todos os meses) */}
+      <Card className="p-4 mb-5 bg-gradient-to-br from-primary/10 to-accent/5 border-primary/30">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-primary" />
+            <h3 className="text-sm font-bold text-foreground">Por pagar</h3>
+          </div>
+          <span className="text-base font-extrabold text-primary">€{unpaidTotal.toFixed(2)}</span>
+        </div>
+
+        <div className="space-y-2 mb-3">
+          {PEOPLE.map((person) => {
+            const amount = unpaidByPerson[person];
+            const lastPaid = lastPaidDates[person];
+            return (
+              <div key={person} className="flex items-center justify-between gap-2 p-2 rounded-lg bg-background/60">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span>{PERSON_AVATARS[person]}</span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium leading-tight">{person}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">
+                      {lastPaid
+                        ? `Último pago: ${format(parse(lastPaid, 'yyyy-MM-dd', new Date()), "d MMM yyyy", { locale: pt })}`
+                        : 'Nunca pago'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-sm font-bold ${amount > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
+                    €{amount.toFixed(2)}
+                  </span>
+                  {amount > 0 && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="outline" className="h-7 px-2 gap-1" disabled={payMutation.isPending}>
+                          <Check className="w-3 h-3" />
+                          Pagar
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Marcar como pago a {person}?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Vai registar o pagamento de <strong>€{amount.toFixed(2)}</strong> ao {person}.
+                            Todas as tarefas até hoje ({format(new Date(), "d MMM yyyy", { locale: pt })}) ficam marcadas como pagas.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => payMutation.mutate({ persons: [person] })}>
+                            Confirmar pagamento
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button className="w-full gap-2" disabled={personsWithDebt.length === 0 || payMutation.isPending}>
+              {payMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Marcar todos como pagos
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Pagar a todos os filhos?</AlertDialogTitle>
+              <AlertDialogDescription asChild>
+                <div className="space-y-2">
+                  <p>Vais registar o pagamento de <strong>€{unpaidTotal.toFixed(2)}</strong> no total:</p>
+                  <ul className="text-sm space-y-1 pl-4 list-disc">
+                    {personsWithDebt.map((p) => (
+                      <li key={p}>{p}: €{unpaidByPerson[p].toFixed(2)}</li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-muted-foreground">
+                    Todas as tarefas até hoje ({format(new Date(), "d MMM yyyy", { locale: pt })}) ficam marcadas como pagas.
+                  </p>
+                </div>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={() => payMutation.mutate({ persons: personsWithDebt })}>
+                Confirmar pagamento
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </Card>
 
       <Tabs defaultValue="approvals" className="w-full">
         <TabsList className="w-full grid grid-cols-3 mb-5 h-11 rounded-xl">

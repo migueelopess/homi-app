@@ -268,6 +268,51 @@ export const TaskCancellationService = {
   },
 };
 
+export const PaymentService = {
+  async list() {
+    const { data, error } = await supabase
+      .from('payments')
+      .select('*')
+      .order('paid_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  // Returns { [person]: 'YYYY-MM-DD' } for the latest paid_through_date per person
+  async getLastPaidDates() {
+    const { data, error } = await supabase
+      .from('payments')
+      .select('person, paid_through_date');
+    if (error) throw error;
+    const map = {};
+    for (const row of data || []) {
+      if (!map[row.person] || row.paid_through_date > map[row.person]) {
+        map[row.person] = row.paid_through_date;
+      }
+    }
+    return map;
+  },
+
+  async create({ person, paid_through_date, paid_by }) {
+    const { data, error } = await supabase
+      .from('payments')
+      .insert({ person, paid_through_date, paid_by: paid_by ?? null })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async createBulk(rows) {
+    const { data, error } = await supabase
+      .from('payments')
+      .insert(rows)
+      .select();
+    if (error) throw error;
+    return data;
+  },
+};
+
 export const CleanupLogService = {
   async getLastCleanupDate() {
     const { data, error } = await supabase

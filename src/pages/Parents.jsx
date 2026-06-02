@@ -73,6 +73,22 @@ export default function Parents() {
     },
   });
 
+  const applyPenaltyMutation = useMutation({
+    mutationFn: ({ person }) => TaskService.applyPenalty(person, user?.id),
+    onSuccess: (updated, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      if (updated.length === 0) {
+        toast.error('Sem falhas pendentes para descontar');
+      } else {
+        toast.success(`Castigo aplicado a ${vars.person} (${updated.length} ${updated.length === 1 ? 'falha descontada' : 'falhas descontadas'})`);
+      }
+    },
+    onError: (err) => {
+      console.error('Apply penalty failed:', err);
+      toast.error('Erro ao aplicar castigo');
+    },
+  });
+
   const handleCleanup = async () => {
     setCleanupLoading(true);
     try {
@@ -374,6 +390,7 @@ export default function Parents() {
         <div className="space-y-2">
           {PEOPLE.map(person => {
             const failures = countFailures(tasks, person);
+            const canApply = failures >= 3;
             return (
               <div key={person} className="flex items-center justify-between p-2 rounded-lg bg-muted">
                 <div className="flex items-center gap-2">
@@ -382,8 +399,38 @@ export default function Parents() {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">{failures}/3</span>
-                  {failures >= 3 ? (
-                    <Badge variant="destructive" className="text-[10px]">Sem {PENALTIES[person]}</Badge>
+                  {canApply ? (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="h-7 px-3 text-[11px] font-semibold"
+                          disabled={applyPenaltyMutation.isPending}
+                        >
+                          Dar castigo
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Aplicar castigo a {person}?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Castigo: <strong>Sem {PENALTIES[person]}</strong>.
+                            <br />
+                            Vai descontar 3 falhas do contador ({failures}/3 → {failures - 3}/3).
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => applyPenaltyMutation.mutate({ person })}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Confirmar
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   ) : (
                     <Badge className="bg-primary/10 text-primary text-[10px] border-0">OK</Badge>
                   )}

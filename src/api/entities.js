@@ -93,6 +93,35 @@ export const TaskService = {
     }
     return data;
   },
+
+  // Marks the 3 oldest undischarged "not_done" tasks for `person` as having
+  // had the punishment applied. Returns the rows actually updated (usually 3,
+  // could be fewer if the person doesn't have 3 pending failures).
+  async applyPenalty(person, parentId) {
+    const { data: pending, error: selErr } = await supabase
+      .from('tasks')
+      .select('id')
+      .eq('person', person)
+      .eq('completion_type', 'not_done')
+      .is('penalty_applied_at', null)
+      .order('date', { ascending: true })
+      .order('created_date', { ascending: true })
+      .limit(3);
+    if (selErr) throw selErr;
+    if (!pending || pending.length === 0) return [];
+
+    const ids = pending.map(t => t.id);
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        penalty_applied_at: new Date().toISOString(),
+        penalty_applied_by: parentId ?? null,
+      })
+      .in('id', ids)
+      .select();
+    if (error) throw error;
+    return data ?? [];
+  },
 };
 
 export const ScheduledTaskService = {

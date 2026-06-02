@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TaskService, PaymentService } from '@/api/entities';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
-import { Lock, Shield, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Star, Loader2, Check } from 'lucide-react';
+import { Lock, Shield, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Star, Loader2, Check, AlertTriangle } from 'lucide-react';
 import PhotoModal from '@/components/parents/PhotoModal';
 import ApprovalsTab from '@/components/parents/ApprovalsTab';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
@@ -261,10 +261,13 @@ export default function Parents() {
         </div>
 
         {olderTotal > 0 && (
-          <div className="mb-3 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <p className="text-[11px] text-amber-700 dark:text-amber-400 leading-snug">
-              ⚠️ <strong>€{olderTotal.toFixed(2)}</strong> por pagar de {olderLabel}. O botão "Pagar todos" inclui este valor.
-            </p>
+          <div className="mb-3 p-3 rounded-lg bg-amber-500/15 border-2 border-amber-500/50">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-300 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800 dark:text-amber-200 leading-snug">
+                <strong className="text-base">€{olderTotal.toFixed(2)}</strong> por pagar de <strong>{olderLabel}</strong>. O botão "Pagar todos" inclui este valor.
+              </p>
+            </div>
           </div>
         )}
 
@@ -275,11 +278,12 @@ export default function Parents() {
             const totalAmt = periodAmt + olderAmt;
             return (
               <div key={person} className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-wrap">
                   <span>{PERSON_AVATARS[person]}</span>
                   <span className="text-sm text-foreground">{person}</span>
                   {olderAmt > 0 && (
-                    <span className="text-[10px] text-amber-700 dark:text-amber-400">
+                    <span className="text-xs font-bold text-amber-700 dark:text-amber-300 bg-amber-500/15 border border-amber-500/40 px-1.5 py-0.5 rounded-md inline-flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
                       +€{olderAmt.toFixed(2)} antigo
                     </span>
                   )}

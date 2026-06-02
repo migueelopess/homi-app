@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { TaskService, TaskDelegationService, TaskCancellationService, CleanupLogService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
-import { getWeekKey, getCurrentMonthKey } from './taskHelpers';
+import { getWeekKey, getCurrentMonthKey, sameTaskSlot } from './taskHelpers';
 
 // Module-level Set — persists across component remounts within the same app session
 const _checkedPersons = new Set();
@@ -83,12 +83,14 @@ export function useMarkMissedTasks({ scheduledTasks, tasks, person, enabled }) {
           const wasCancelled = cancellations.some(
             c => c.person === person &&
                  c.task_name === scheduledTask.task_name &&
-                 c.task_date === dateStr
+                 c.task_date === dateStr &&
+                 sameTaskSlot(c.end_time, scheduledTask.end_time)
           );
           if (wasCancelled) continue;
 
           const alreadyRecorded = tasks.some(
-            t => t.person === person && t.task_name === scheduledTask.task_name && t.date === dateStr
+            t => t.person === person && t.task_name === scheduledTask.task_name && t.date === dateStr &&
+                 sameTaskSlot(t.end_time, scheduledTask.end_time)
           );
 
           if (!alreadyRecorded) {
@@ -98,6 +100,7 @@ export function useMarkMissedTasks({ scheduledTasks, tasks, person, enabled }) {
               completion_type: 'not_done',
               value: 0,
               date: dateStr,
+              end_time: scheduledTask.end_time ?? null,
               week_key: getWeekKey(date),
               month_key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
               approval_status: 'approved',
@@ -111,7 +114,7 @@ export function useMarkMissedTasks({ scheduledTasks, tasks, person, enabled }) {
                 person: '__parents__',
                 title: `❌ Tarefa não feita`,
                 body: `${person} não completou: ${scheduledTask.task_name} (${dateLabel})`,
-                tag: `missed-${person}-${scheduledTask.task_name}-${dateStr}`,
+                tag: `missed-${person}-${scheduledTask.task_name}-${scheduledTask.end_time || ''}-${dateStr}`,
               });
             }
           }

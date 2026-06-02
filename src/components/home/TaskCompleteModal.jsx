@@ -3,7 +3,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { TaskService, TaskReminderService, OccasionalTaskService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { uploadTaskPhoto } from '@/api/storage';
-import { COMPLETION_TYPES, SIDNEY_TASKS, getWeekKey, getCurrentMonthKey, TASK_ICONS, PERSON_AVATARS, getLocalDateStr } from '@/lib/taskHelpers';
+import { COMPLETION_TYPES, SIDNEY_TASKS, getWeekKey, getCurrentMonthKey, TASK_ICONS, PERSON_AVATARS, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Camera, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -37,7 +37,7 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
   });
 
   const hasReminder = task
-    ? reminders.some(r => r.task_name === task.task_name)
+    ? reminders.some(r => r.task_name === task.task_name && sameTaskSlot(r.end_time, task.end_time))
     : false;
 
   // Delegation info
@@ -78,6 +78,7 @@ export default function TaskCompleteModal({ task, person, isExtended = false, oc
           completion_type: completionType,
           value: getActualValue(completionType),
           date: today,
+          end_time: task.end_time ?? null,
           week_key: getWeekKey(new Date()),
           month_key: getCurrentMonthKey(),
           photo_url,

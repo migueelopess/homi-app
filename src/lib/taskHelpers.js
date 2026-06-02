@@ -66,6 +66,20 @@ export function getTaskIcon(taskName) {
   return TASK_ICONS[taskName] || '✅';
 }
 
+// Same-named tasks can occur several times in a day at different times (e.g. a
+// noon and an evening "Máquina da louça"). We use the deadline (end_time) as the
+// "slot" that tells those occurrences apart, so completing/cancelling/extending
+// or reminding one no longer affects the others.
+//
+// `recordEndTime` is the end_time stored on a completion/reminder/extension/
+// cancellation row; `taskEndTime` is the occurrence we're matching against.
+// Records created before slot tracking existed have no end_time — those fall
+// back to name-only matching so historical data keeps working.
+export function sameTaskSlot(recordEndTime, taskEndTime) {
+  if (recordEndTime == null || recordEndTime === '') return true;
+  return recordEndTime === (taskEndTime ?? '');
+}
+
 export function getLocalDateStr(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }

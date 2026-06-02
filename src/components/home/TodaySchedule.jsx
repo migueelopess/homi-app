@@ -6,7 +6,7 @@ import { Clock, CheckCircle2, Circle, Star, ArrowRightLeft } from 'lucide-react'
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
-import { TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr } from '@/lib/taskHelpers';
+import { TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
 import TaskCompleteModal from './TaskCompleteModal';
 import { toast } from 'sonner';
 
@@ -20,7 +20,9 @@ function getTodayKey() {
 }
 
 function isTaskDone(scheduledTask, todayTasks) {
-  return todayTasks.some(t => t.task_name === scheduledTask.task_name);
+  return todayTasks.some(t =>
+    t.task_name === scheduledTask.task_name && sameTaskSlot(t.end_time, scheduledTask.end_time)
+  );
 }
 
 function isOverdue(endTime) {
@@ -65,8 +67,10 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
     queryFn: () => TaskCancellationService.getByDate(today),
   });
 
-  const isCancelled = (taskName) =>
-    cancellations.some(c => c.person === person && c.task_name === taskName);
+  const isCancelled = (task) =>
+    cancellations.some(c =>
+      c.person === person && c.task_name === task.task_name && sameTaskSlot(c.end_time, task.end_time)
+    );
 
   const todayDelegations = delegations.filter(d => d.task_date === today);
 
@@ -85,7 +89,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
     // Hide tasks I delegated away
     .filter(t => !myDelegatedAway.some(d => d.task_type === 'scheduled' && d.scheduled_task_id === t.id))
     // Hide tasks cancelled by parents for today
-    .filter(t => !isCancelled(t.task_name))
+    .filter(t => !isCancelled(t))
     .sort((a, b) => (a.start_time || '00:00').localeCompare(b.start_time || '00:00'));
 
   const todayOccasional = occasionalTasks
@@ -93,7 +97,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
     // Hide occasional tasks I delegated away
     .filter(t => !myDelegatedAway.some(d => d.task_type === 'occasional' && d.occasional_task_id === t.id))
     // Hide tasks cancelled by parents for today
-    .filter(t => !isCancelled(t.task_name))
+    .filter(t => !isCancelled(t))
     .sort((a, b) => (a.end_time || '99:99').localeCompare(b.end_time || '99:99'));
 
   // Build delegated-to-me tasks as card items
@@ -152,7 +156,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
   const totalAll = todaySchedule.length + todayOccasional.length + delegatedScheduledToMe.length + delegatedOccasionalToMe.length;
   const doneScheduled = todaySchedule.filter(t => isTaskDone(t, todayTasks)).length;
   const doneDelegatedScheduled = delegatedScheduledToMe.filter(d =>
-    todayTasks.some(t => t.task_name === d.task_name && t.person === person)
+    todayTasks.some(t => t.task_name === d.task_name && t.person === person && sameTaskSlot(t.end_time, d.end_time))
   ).length;
   const totalDone = doneScheduled + doneDelegatedScheduled;
 
@@ -227,9 +231,9 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
 
         {/* Delegated occasional tasks TO me */}
         {delegatedOccasionalToMe.map((d, i) => {
-          const isExtended = extensions.some(e => e.task_name === d.task_name && (e.person === d.from_person || e.person === person));
+          const isExtended = extensions.some(e => e.task_name === d.task_name && (e.person === d.from_person || e.person === person) && sameTaskSlot(e.end_time, d.end_time));
           const overdue = !isExtended && isOverdue(d.end_time);
-          const isDone = todayTasks.some(t => t.task_name === d.task_name && t.person === person);
+          const isDone = todayTasks.some(t => t.task_name === d.task_name && t.person === person && sameTaskSlot(t.end_time, d.end_time));
           if (isDone) return null;
           return (
             <motion.div
@@ -274,7 +278,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
 
         {todaySchedule.map((task, i) => {
           const isDone = isTaskDone(task, todayTasks);
-          const isExtended = extensions.some(e => e.person === person && e.task_name === task.task_name);
+          const isExtended = extensions.some(e => e.person === person && e.task_name === task.task_name && sameTaskSlot(e.end_time, task.end_time));
           const overdue = !isDone && !isExtended && isOverdue(task.end_time);
           const active = isActive(task.start_time, task.end_time);
 
@@ -332,8 +336,8 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
 
         {/* Delegated scheduled tasks TO me */}
         {delegatedScheduledToMe.map((d, i) => {
-          const isDone = todayTasks.some(t => t.task_name === d.task_name && t.person === person);
-          const isExtended = extensions.some(e => e.task_name === d.task_name && (e.person === d.from_person || e.person === person));
+          const isDone = todayTasks.some(t => t.task_name === d.task_name && t.person === person && sameTaskSlot(t.end_time, d.end_time));
+          const isExtended = extensions.some(e => e.task_name === d.task_name && (e.person === d.from_person || e.person === person) && sameTaskSlot(e.end_time, d.end_time));
           const overdue = !isDone && !isExtended && isOverdue(d.end_time);
           const active = isActive(null, d.end_time);
 

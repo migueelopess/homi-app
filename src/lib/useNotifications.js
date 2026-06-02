@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { getLocalDateStr } from './taskHelpers';
+import { getLocalDateStr, sameTaskSlot } from './taskHelpers';
 
 function getTodayKey() {
   return new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
@@ -38,7 +38,7 @@ export function useNotifications({ scheduledTasks, todayTasks, person, occasiona
 
     myScheduledTasks.forEach((task) => {
       if (!task.end_time) return;
-      const isDone = todayTasks.some((t) => t.task_name === task.task_name && t.date === today);
+      const isDone = todayTasks.some((t) => t.task_name === task.task_name && t.date === today && sameTaskSlot(t.end_time, task.end_time));
       if (isDone) return;
 
       const [h, m] = task.end_time.split(':').map(Number);
@@ -86,7 +86,7 @@ export function getPendingTasks(scheduledTasks, todayTasks, person, occasionalTa
   const pendingScheduled = scheduledTasks.filter((task) => {
     if (task.person !== person) return false;
     if (!task.days_of_week?.includes(todayKey)) return false;
-    const isDone = todayTasks.some((t) => t.task_name === task.task_name && t.date === today);
+    const isDone = todayTasks.some((t) => t.task_name === task.task_name && t.date === today && sameTaskSlot(t.end_time, task.end_time));
     return !isDone;
   });
 

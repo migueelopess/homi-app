@@ -4,7 +4,7 @@ import { ScheduledTaskService, OccasionalTaskService, TaskService, TaskReminderS
 import { sendTaskReminder } from '@/api/pushNotifications';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { useAuth } from '@/lib/AuthContext';
-import { PEOPLE, PERSON_AVATARS, TASK_ICONS, getLocalDateStr } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, TASK_ICONS, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
 import { Lock, ChevronLeft, ChevronRight, Bell, BellRing, Clock, X, ArrowRightLeft, TimerReset, Ban } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -78,21 +78,23 @@ export default function Tarefas() {
   const todayDelegations = delegations.filter(d => d.task_date === dateStr);
 
   const extendTaskMutation = useMutation({
-    mutationFn: ({ person, taskName, withReminder }) =>
+    mutationFn: ({ person, taskName, endTime, withReminder }) =>
       TaskExtensionService.create({
         person,
         task_name: taskName,
         task_date: dateStr,
+        end_time: endTime ?? null,
         with_reminder: withReminder,
         granted_by: session?.user?.id,
       }),
-    onSuccess: async (_, { person, taskName, withReminder }) => {
+    onSuccess: async (_, { person, taskName, endTime, withReminder }) => {
       queryClient.invalidateQueries({ queryKey: ['taskExtensions', dateStr] });
       if (withReminder) {
         try {
           await sendTaskReminder({
             person,
             taskName,
+            endTime,
             taskType: selectedTask?._type,
             taskDate: dateStr,
             sentBy: session?.user?.id,
@@ -115,11 +117,12 @@ export default function Tarefas() {
   });
 
   const cancelTaskMutation = useMutation({
-    mutationFn: ({ person, taskName }) =>
+    mutationFn: ({ person, taskName, endTime }) =>
       TaskCancellationService.create({
         person,
         task_name: taskName,
         task_date: dateStr,
+        end_time: endTime ?? null,
         cancelled_by: session?.user?.id,
       }),
     onSuccess: (_, { person, taskName }) => {
@@ -147,10 +150,11 @@ export default function Tarefas() {
   });
 
   const sendReminderMutation = useMutation({
-    mutationFn: ({ person, taskName, taskType }) =>
+    mutationFn: ({ person, taskName, endTime, taskType }) =>
       sendTaskReminder({
         person,
         taskName,
+        endTime,
         taskType,
         taskDate: dateStr,
         sentBy: session?.user?.id,
@@ -190,14 +194,14 @@ export default function Tarefas() {
           const delegation = todayDelegations.find(
             d => d.task_type === 'scheduled' && d.scheduled_task_id === t.id && d.from_person === person
           );
-          const extension = extensions.find(e => e.person === person && e.task_name === t.task_name);
-          const cancellation = cancellations.find(c => c.person === person && c.task_name === t.task_name);
+          const extension = extensions.find(e => e.person === person && e.task_name === t.task_name && sameTaskSlot(e.end_time, t.end_time));
+          const cancellation = cancellations.find(c => c.person === person && c.task_name === t.task_name && sameTaskSlot(c.end_time, t.end_time));
           const overdue = isOverdue(t.end_time, dateStr);
           return {
             ...t,
             _type: 'scheduled',
-            _done: completedTasks.some(ct => ct.person === person && ct.task_name === t.task_name && ct.date === dateStr),
-            _reminded: reminders.some(r => r.person === person && r.task_name === t.task_name),
+            _done: completedTasks.some(ct => ct.person === person && ct.task_name === t.task_name && ct.date === dateStr && sameTaskSlot(ct.end_time, t.end_time)),
+            _reminded: reminders.some(r => r.person === person && r.task_name === t.task_name && sameTaskSlot(r.end_time, t.end_time)),
             _overdue: extension ? false : overdue,
             _extended: !!extension,
             _extension: extension || null,
@@ -213,14 +217,14 @@ export default function Tarefas() {
           const delegation = todayDelegations.find(
             d => d.task_type === 'occasional' && d.occasional_task_id === t.id && d.from_person === person
           );
-          const extension = extensions.find(e => e.person === person && e.task_name === t.task_name);
-          const cancellation = cancellations.find(c => c.person === person && c.task_name === t.task_name);
+          const extension = extensions.find(e => e.person === person && e.task_name === t.task_name && sameTaskSlot(e.end_time, t.end_time));
+          const cancellation = cancellations.find(c => c.person === person && c.task_name === t.task_name && sameTaskSlot(c.end_time, t.end_time));
           const overdue = isOverdue(t.end_time, dateStr);
           return {
             ...t,
             _type: 'occasional',
-            _done: t.completed || completedTasks.some(ct => ct.person === person && ct.task_name === t.task_name && ct.date === dateStr),
-            _reminded: reminders.some(r => r.person === person && r.task_name === t.task_name),
+            _done: t.completed || completedTasks.some(ct => ct.person === person && ct.task_name === t.task_name && ct.date === dateStr && sameTaskSlot(ct.end_time, t.end_time)),
+            _reminded: reminders.some(r => r.person === person && r.task_name === t.task_name && sameTaskSlot(r.end_time, t.end_time)),
             _overdue: extension ? false : overdue,
             _extended: !!extension,
             _extension: extension || null,
@@ -238,8 +242,8 @@ export default function Tarefas() {
             : occasionalTasks.find(t => t.id === d.occasional_task_id);
           if (!originalTask) return null;
 
-          const extension = extensions.find(e => e.person === person && e.task_name === d.task_name);
-          const cancellation = cancellations.find(c => c.person === person && c.task_name === d.task_name);
+          const extension = extensions.find(e => e.person === person && e.task_name === d.task_name && sameTaskSlot(e.end_time, originalTask.end_time));
+          const cancellation = cancellations.find(c => c.person === person && c.task_name === d.task_name && sameTaskSlot(c.end_time, originalTask.end_time));
           const overdue = isOverdue(originalTask.end_time, dateStr);
 
           return {
@@ -247,8 +251,8 @@ export default function Tarefas() {
             person,
             task_name: d.task_name,
             _type: d.task_type,
-            _done: completedTasks.some(ct => ct.person === person && ct.task_name === d.task_name && ct.date === dateStr),
-            _reminded: reminders.some(r => r.person === person && r.task_name === d.task_name),
+            _done: completedTasks.some(ct => ct.person === person && ct.task_name === d.task_name && ct.date === dateStr && sameTaskSlot(ct.end_time, originalTask.end_time)),
+            _reminded: reminders.some(r => r.person === person && r.task_name === d.task_name && sameTaskSlot(r.end_time, originalTask.end_time)),
             _overdue: extension ? false : overdue,
             _extended: !!extension,
             _extension: extension || null,
@@ -505,6 +509,7 @@ export default function Tarefas() {
                       extendTaskMutation.mutate({
                         person: selectedTask.person,
                         taskName: selectedTask.task_name,
+                        endTime: selectedTask.end_time,
                         withReminder: false,
                       })
                     }
@@ -519,6 +524,7 @@ export default function Tarefas() {
                       extendTaskMutation.mutate({
                         person: selectedTask.person,
                         taskName: selectedTask.task_name,
+                        endTime: selectedTask.end_time,
                         withReminder: true,
                       })
                     }
@@ -539,6 +545,7 @@ export default function Tarefas() {
                       sendReminderMutation.mutate({
                         person: selectedTask.person,
                         taskName: selectedTask.task_name,
+                        endTime: selectedTask.end_time,
                         taskType: selectedTask._type,
                       })
                     }
@@ -588,6 +595,7 @@ export default function Tarefas() {
                         cancelTaskMutation.mutate({
                           person: selectedTask.person,
                           taskName: selectedTask.task_name,
+                          endTime: selectedTask.end_time,
                         })
                       }
                       className="w-full py-3 rounded-2xl bg-destructive/10 text-destructive font-bold text-sm disabled:opacity-40 flex items-center justify-center gap-2"

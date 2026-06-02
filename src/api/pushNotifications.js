@@ -161,12 +161,13 @@ export async function getPushSubscriptionState() {
  * Send a task reminder: creates a record in task_reminders + sends a push notification.
  * Returns the created reminder record.
  */
-export async function sendTaskReminder({ person, taskName, taskType, taskDate, sentBy }) {
+export async function sendTaskReminder({ person, taskName, endTime, taskType, taskDate, sentBy }) {
   const reminder = await TaskReminderService.create({
     person,
     task_name: taskName,
     task_type: taskType,
     task_date: taskDate,
+    end_time: endTime ?? null,
     sent_by: sentBy,
   });
 
@@ -175,7 +176,7 @@ export async function sendTaskReminder({ person, taskName, taskType, taskDate, s
     title: '⏰ Lembrete',
     body: `${taskName} precisa de ser feita!`,
     url: '/',
-    tag: `reminder-${person}-${taskName}-${taskDate}`,
+    tag: `reminder-${person}-${taskName}-${endTime || ''}-${taskDate}`,
   });
 
   return reminder;

@@ -4,18 +4,25 @@ import { Badge } from '@/components/ui/badge';
 import { PERSON_AVATARS, PENALTIES, calculateEarnings, countFailures, getLocalDateStr, getCurrentMonthKey, getCurrentWeekKey, checkWeeklyBonus, isBonusTask, WEEKLY_BONUS } from '@/lib/taskHelpers';
 import { TrendingUp, AlertTriangle, Trophy } from 'lucide-react';
 
-export default function PersonCard({ person, tasks, weekTasks, index }) {
+export default function PersonCard({ person, tasks, weekTasks, lastPaidDate = null, index }) {
   const personTasks = tasks.filter(t => t.person === person);
   const personWeekTasks = weekTasks.filter(t => t.person === person);
   const currentMonth = getCurrentMonthKey();
   const currentWeek = getCurrentWeekKey();
   const personMonthTasks = personTasks.filter(t => t.date && t.date.startsWith(currentMonth));
-  const monthEarnings = calculateEarnings(personMonthTasks);
-  const weekEarnings = calculateEarnings(personWeekTasks);
+
+  // A task counts toward the displayed balance only if it's not already paid
+  // (date > lastPaidDate) and not pending approval (could still be rejected).
+  const isUnpaid = (t) =>
+    t.approval_status !== 'pending' && (!lastPaidDate || t.date > lastPaidDate);
+  const monthEarnings = calculateEarnings(personMonthTasks.filter(isUnpaid));
+  const weekEarnings = calculateEarnings(personWeekTasks.filter(isUnpaid));
   const failures = countFailures(tasks, person);
   const todayTasks = personTasks.filter(t => t.date === getLocalDateStr());
 
-  // Pending bonus for the current week — only count if not already persisted
+  // Pending bonus for the current week — only count if not already persisted.
+  // If the week was paid mid-week the bonus will materialize after lastPaidDate
+  // and thus still owed, so we include it here regardless of paid state.
   const currentWeekBonusAlreadyPersisted = personWeekTasks.some(t => isBonusTask(t) && t.week_key === currentWeek);
   const pendingBonus = !currentWeekBonusAlreadyPersisted && checkWeeklyBonus(tasks, person, currentWeek)
     ? WEEKLY_BONUS

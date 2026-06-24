@@ -4,7 +4,7 @@ import { ScheduledTaskService, OccasionalTaskService, TaskService, TaskReminderS
 import { sendTaskReminder } from '@/api/pushNotifications';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { useAuth } from '@/lib/AuthContext';
-import { PEOPLE, PERSON_AVATARS, TASK_ICONS, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, TASK_ICONS, COMPLETION_TYPES, SIDNEY_TASKS, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
 import { Lock, ChevronLeft, ChevronRight, Bell, BellRing, Clock, X, ArrowRightLeft, TimerReset, Ban } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -28,6 +28,23 @@ function isOverdue(endTime, dateStr) {
   const end = new Date();
   end.setHours(h, m, 0);
   return now > end;
+}
+
+// What a task is worth if completed on time — used to label the
+// "give more time" buttons so they reflect the actual reward.
+// Occasional tasks carry a custom reward (halved with a reminder),
+// scheduled tasks use the standard scale, and Sidney tasks are worth €0.
+function extensionRewards(task) {
+  if (!task) return { full: 0, half: 0 };
+  if (SIDNEY_TASKS.includes(task.task_name)) return { full: 0, half: 0 };
+  if (task._type === 'occasional' && task.reward != null) {
+    const r = Number(task.reward);
+    return { full: r, half: Math.round(r * 50) / 100 };
+  }
+  return {
+    full: COMPLETION_TYPES.on_time_no_reminder.value,
+    half: COMPLETION_TYPES.on_time_with_reminder.value,
+  };
 }
 
 export default function Tarefas() {
@@ -516,7 +533,7 @@ export default function Tarefas() {
                     className="w-full py-3 rounded-2xl bg-amber-500 text-white font-bold text-sm disabled:opacity-40 flex items-center justify-center gap-2"
                   >
                     <TimerReset className="w-4 h-4" />
-                    Dar mais tempo (sem lembrete) — €1,00
+                    Dar mais tempo (sem lembrete) — €{extensionRewards(selectedTask).full.toFixed(2)}
                   </button>
                   <button
                     disabled={extendTaskMutation.isPending || selectedTask._reminded}
@@ -531,7 +548,7 @@ export default function Tarefas() {
                     className="w-full py-3 rounded-2xl bg-amber-500/70 text-white font-bold text-sm disabled:opacity-40 flex items-center justify-center gap-2"
                   >
                     <Bell className="w-4 h-4" />
-                    Dar mais tempo (com lembrete) — €0,50
+                    Dar mais tempo (com lembrete) — €{extensionRewards(selectedTask).half.toFixed(2)}
                   </button>
                 </div>
               )}

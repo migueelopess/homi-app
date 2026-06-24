@@ -183,7 +183,8 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
 
         {/* Occasional tasks for today */}
         {todayOccasional.map((task, i) => {
-          const overdue = isOverdue(task.end_time);
+          const isExtended = extensions.some(e => e.person === person && e.task_name === task.task_name && sameTaskSlot(e.end_time, task.end_time));
+          const overdue = !isExtended && isOverdue(task.end_time);
           return (
             <motion.div
               key={`occ-${task.id}`}
@@ -196,8 +197,8 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                   overdue ? 'border-destructive/40 bg-destructive/5' : ''
                 }`}
               >
-                <div className="text-xl flex-shrink-0 cursor-pointer" onClick={() => setSelectedTask({ ...task, _occasional: true })}>{TASK_ICONS[task.task_name] || '✅'}</div>
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setSelectedTask({ ...task, _occasional: true })}>
+                <div className="text-xl flex-shrink-0 cursor-pointer" onClick={() => setSelectedTask({ ...task, _occasional: true, _isExtended: isExtended })}>{TASK_ICONS[task.task_name] || '✅'}</div>
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setSelectedTask({ ...task, _occasional: true, _isExtended: isExtended })}>
                   <div className="flex items-center gap-1.5">
                     <p className="text-sm font-semibold text-foreground">{task.task_name}</p>
                     <Star className="w-3 h-3 text-accent fill-accent" />
@@ -218,7 +219,9 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                   >
                     <ArrowRightLeft className="w-3.5 h-3.5" />
                   </button>
-                  {overdue ? (
+                  {isExtended ? (
+                    <Badge className="bg-amber-500/10 text-amber-600 border-0 text-[10px]">Extendida</Badge>
+                  ) : overdue ? (
                     <Badge variant="destructive" className="text-[10px]">Atrasado</Badge>
                   ) : (
                     <Badge className="bg-accent/20 text-accent-foreground border-0 text-[10px]">Especial</Badge>

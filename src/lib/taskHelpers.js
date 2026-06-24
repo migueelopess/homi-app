@@ -5,6 +5,11 @@ export const COMPLETION_TYPES = {
   on_time_with_reminder: { label: 'A tempo (com 1 lembrete)', value: 0.50, emoji: '⏰', color: 'text-accent' },
   late: { label: 'Feita com atraso', value: 0.25, emoji: '⚠️', color: 'text-destructive' },
   not_done: { label: 'Não feita', value: 0, emoji: '❌', color: 'text-destructive' },
+  // Display-only state for an occurrence the parents waived (cancelled). It is
+  // never written to the DB — `applyCancellations` relabels matching not_done
+  // rows in memory so all completion_type-based logic (failures, bonus,
+  // earnings) treats a waived task as "not a failure" rather than a miss.
+  cancelled: { label: 'Cancelada pelos pais', value: 0, emoji: '🚫', color: 'text-muted-foreground' },
 };
 
 export const WEEKLY_BONUS = 4.00;
@@ -78,6 +83,36 @@ export function getTaskIcon(taskName) {
 export function sameTaskSlot(recordEndTime, taskEndTime) {
   if (recordEndTime == null || recordEndTime === '') return true;
   return recordEndTime === (taskEndTime ?? '');
+}
+
+// True if the parents cancelled this exact task occurrence (same person, day
+// and time slot). A cancelled occurrence must never count as a failure —
+// regardless of whether the not_done row was created before or after the
+// cancellation. `task` is a row from the `tasks` table; `cancellations` are
+// rows from `task_cancellations`.
+export function isTaskCancelled(task, cancellations = []) {
+  if (!cancellations.length) return false;
+  return cancellations.some(c =>
+    c.person === task.person &&
+    c.task_name === task.task_name &&
+    c.task_date === task.date &&
+    sameTaskSlot(c.end_time, task.end_time)
+  );
+}
+
+// Returns a copy of `tasks` where every cancelled not_done occurrence is
+// relabeled to the 'cancelled' completion type (value 0). Everything in the
+// app keys off completion_type, so doing this once at load time makes
+// failures, the weekly bonus, earnings and penalties all treat a waived task
+// correctly — without each consumer needing to know about cancellations.
+// Nothing here is persisted; it's purely an in-memory view of the data.
+export function applyCancellations(tasks, cancellations = []) {
+  if (!cancellations.length) return tasks;
+  return tasks.map(t =>
+    t.completion_type === 'not_done' && isTaskCancelled(t, cancellations)
+      ? { ...t, completion_type: 'cancelled', value: 0 }
+      : t
+  );
 }
 
 export function getLocalDateStr(date = new Date()) {

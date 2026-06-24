@@ -164,7 +164,7 @@ export default function RegisterTask() {
                 Como foi feita?
               </Label>
               <div className="space-y-2">
-                {Object.entries(COMPLETION_TYPES).filter(([key]) => key !== 'not_done').map(([key, ct]) => {
+                {Object.entries(COMPLETION_TYPES).filter(([key]) => key !== 'not_done' && key !== 'cancelled').map(([key, ct]) => {
                   const finalName = taskName === 'custom' ? customTask : taskName;
                   const displayValue = getTaskValue(finalName, key);
                   return (

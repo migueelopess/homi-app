@@ -22,6 +22,7 @@ export default function RecentActivity({ tasks }) {
       {recent.map((task, i) => {
         const ct = COMPLETION_TYPES[task.completion_type];
         const bonus = isBonusTask(task);
+        const cancelled = task.completion_type === 'cancelled';
         const missed = task.completion_type === 'not_done';
         return (
           <motion.div
@@ -49,7 +50,9 @@ export default function RecentActivity({ tasks }) {
               </p>
             </div>
             <div className="text-right flex-shrink-0">
-              {missed ? (
+              {cancelled ? (
+                <p className="text-[11px] font-semibold text-muted-foreground leading-none">🚫 Cancelada</p>
+              ) : missed ? (
                 <p className="text-base font-extrabold text-destructive leading-none">✕</p>
               ) : (
                 <>

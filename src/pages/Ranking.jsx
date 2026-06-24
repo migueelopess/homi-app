@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { TaskService } from '@/api/entities';
-import { PEOPLE, PERSON_AVATARS, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, isBonusTask } from '@/lib/taskHelpers';
+import { TaskService, TaskCancellationService } from '@/api/entities';
+import { PEOPLE, PERSON_AVATARS, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, isBonusTask, applyCancellations } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -11,10 +11,18 @@ export default function Ranking() {
   const currentWeek = getCurrentWeekKey();
   const currentMonth = getCurrentMonthKey();
   
-  const { data: tasks = [], isLoading } = useQuery({
+  const { data: rawTasks = [], isLoading } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => TaskService.list('-created_date', 500),
   });
+
+  const { data: cancellations = [] } = useQuery({
+    queryKey: ['taskCancellations', 'all'],
+    queryFn: () => TaskCancellationService.list(),
+  });
+
+  // Waived occurrences shouldn't block the weekly bonus in the ranking.
+  const tasks = applyCancellations(rawTasks, cancellations);
 
   const getRanking = (filteredTasks) => {
     return PEOPLE.map(person => {

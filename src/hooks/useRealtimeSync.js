@@ -28,6 +28,9 @@ export function useRealtimeSync() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_extensions' }, () => {
         queryClient.invalidateQueries({ queryKey: ['taskExtensions'] });
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_cancellations' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['taskCancellations'] });
+      })
       .subscribe();
 
     return () => {

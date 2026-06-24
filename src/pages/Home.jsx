@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import { TaskService, ScheduledTaskService, OccasionalTaskService, PaymentService } from '@/api/entities';
+import { TaskService, ScheduledTaskService, OccasionalTaskService, PaymentService, TaskCancellationService } from '@/api/entities';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
-import { PEOPLE, PERSON_AVATARS, getCurrentWeekKey, getWeekTasks, PENALTIES, countFailures, getLocalDateStr } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, getCurrentWeekKey, getWeekTasks, PENALTIES, countFailures, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
 import PersonCard from '@/components/home/PersonCard';
 import WeeklyBonusBanner from '@/components/home/WeeklyBonusBanner';
 import RecentActivity from '@/components/home/RecentActivity';
@@ -18,10 +18,18 @@ export default function Home() {
   const userIsParent = isParent(user);
   const person = user?.linked_name;
 
-  const { data: tasks = [], isLoading: isLoadingTasks } = useQuery({
+  const { data: rawTasks = [], isLoading: isLoadingTasks } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => TaskService.list('-created_date', 500),
   });
+
+  const { data: cancellations = [] } = useQuery({
+    queryKey: ['taskCancellations', 'all'],
+    queryFn: () => TaskCancellationService.list(),
+  });
+
+  // Treat parent-cancelled occurrences as 'cancelled' (not failures) everywhere.
+  const tasks = applyCancellations(rawTasks, cancellations);
 
   const { data: scheduledTasks = [], isLoading: isLoadingScheduled } = useQuery({
     queryKey: ['scheduledTasks'],
@@ -48,7 +56,7 @@ export default function Home() {
 
   useMarkMissedTasks({
     scheduledTasks,
-    tasks,
+    tasks: rawTasks,
     person: userIsParent ? null : person,
     enabled: !userIsParent && !!person && !isLoadingTasks && !isLoadingScheduled && scheduledTasks.length > 0,
   });

@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { TaskService, PaymentService } from '@/api/entities';
+import { TaskService, PaymentService, TaskCancellationService } from '@/api/entities';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { Lock, Shield, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Star, Loader2, Check, AlertTriangle } from 'lucide-react';
 import PhotoModal from '@/components/parents/PhotoModal';
 import ApprovalsTab from '@/components/parents/ApprovalsTab';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { supabase } from '@/api/supabaseClient';
-import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, getLocalDateStr } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,10 +26,20 @@ export default function Parents() {
   const [cleanupLoading, setCleanupLoading] = useState(false);
   const { data: user, isLoading: loadingUser } = useCurrentUser();
 
-  const { data: tasks = [], isLoading } = useQuery({
+  const { data: rawTasks = [], isLoading } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => TaskService.list('-created_date', 500),
   });
+
+  const { data: cancellations = [] } = useQuery({
+    queryKey: ['taskCancellations', 'all'],
+    queryFn: () => TaskCancellationService.list(),
+    enabled: isParent(user),
+  });
+
+  // Parent-cancelled occurrences are relabeled 'cancelled' so they never count
+  // as failures (penalties) nor block the weekly bonus.
+  const tasks = applyCancellations(rawTasks, cancellations);
 
   const { data: pendingTasks = [] } = useQuery({
     queryKey: ['pendingTasks'],
@@ -498,6 +508,7 @@ export default function Parents() {
                     const ct = COMPLETION_TYPES[task.completion_type];
                     const isPending = task.approval_status === 'pending';
                     const isRejected = task.approval_status === 'rejected';
+                    const isCancelled = task.completion_type === 'cancelled';
                     const isMissed = task.completion_type === 'not_done' && !isRejected;
                     return (
                       <div key={task.id} className={`flex items-center gap-2 p-2 rounded-lg text-sm ${isMissed ? 'bg-destructive/5 border border-destructive/20' : 'bg-muted'}`}>
@@ -513,6 +524,9 @@ export default function Parents() {
                             )}
                             {isMissed && (
                               <Badge className="bg-destructive/15 text-destructive text-[9px] border-0 px-1.5 leading-none">Falhou</Badge>
+                            )}
+                            {isCancelled && (
+                              <Badge className="bg-muted text-muted-foreground text-[9px] border-0 px-1.5 leading-none">Cancelada</Badge>
                             )}
                           </div>
                           <p className="text-[10px] text-muted-foreground">

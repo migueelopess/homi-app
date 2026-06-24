@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { sameTaskSlot } from '@/lib/taskHelpers';
 
 // Helper to parse Base44-style sort field: '-created_date' → { column: 'created_date', ascending: false }
 function parseSort(sortField) {
@@ -100,17 +101,33 @@ export const TaskService = {
   async applyPenalty(person, parentId) {
     const { data: pending, error: selErr } = await supabase
       .from('tasks')
-      .select('id')
+      .select('id, task_name, date, end_time')
       .eq('person', person)
       .eq('completion_type', 'not_done')
       .is('penalty_applied_at', null)
       .order('date', { ascending: true })
-      .order('created_date', { ascending: true })
-      .limit(3);
+      .order('created_date', { ascending: true });
     if (selErr) throw selErr;
     if (!pending || pending.length === 0) return [];
 
-    const ids = pending.map(t => t.id);
+    // Exclude occurrences the parents have waived — a cancelled task must
+    // never be consumed as a failure, even if a not_done row exists for it.
+    const { data: cancels, error: cancelErr } = await supabase
+      .from('task_cancellations')
+      .select('task_name, task_date, end_time')
+      .eq('person', person);
+    if (cancelErr) throw cancelErr;
+
+    const eligible = pending
+      .filter(t => !(cancels || []).some(c =>
+        c.task_name === t.task_name &&
+        c.task_date === t.date &&
+        sameTaskSlot(c.end_time, t.end_time)
+      ))
+      .slice(0, 3);
+    if (eligible.length === 0) return [];
+
+    const ids = eligible.map(t => t.id);
     const { data, error } = await supabase
       .from('tasks')
       .update({
@@ -277,6 +294,14 @@ export const TaskCancellationService = {
       .from('task_cancellations')
       .select('*')
       .eq('task_date', date);
+    if (error) throw error;
+    return data;
+  },
+
+  async list() {
+    const { data, error } = await supabase
+      .from('task_cancellations')
+      .select('*');
     if (error) throw error;
     return data;
   },

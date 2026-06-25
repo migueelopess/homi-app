@@ -55,10 +55,32 @@ export default function Parents() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id) => TaskService.delete(id),
+    mutationFn: async (task) => {
+      await TaskService.delete(task.id);
+      // useMarkMissedTasks is self-healing: it recreates any scheduled
+      // occurrence that has no record for a past day. Without a tombstone a
+      // deleted task is resurrected (as not_done) the next time a child opens
+      // the app. A cancellation marks the occurrence as waived, so it is
+      // skipped on recreation and never counts as a failure again. The bonus
+      // row has no scheduled origin, so it needs no tombstone.
+      if (!isBonusTask(task)) {
+        try {
+          await TaskCancellationService.create({
+            person: task.person,
+            task_name: task.task_name,
+            task_date: task.date,
+            end_time: task.end_time ?? null,
+            cancelled_by: user?.id ?? null,
+          });
+        } catch (e) {
+          // A tombstone may already exist (unique violation) — that's fine.
+        }
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      toast.success('Tarefa removida');
+      queryClient.invalidateQueries({ queryKey: ['taskCancellations'] });
+      toast.success('Tarefa eliminada permanentemente');
     },
   });
 
@@ -544,14 +566,36 @@ export default function Parents() {
                               <Eye className="w-3.5 h-3.5" />
                             </Button>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive hover:text-destructive"
-                            onClick={() => deleteMutation.mutate(task.id)}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Eliminar tarefa?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Vais eliminar <strong>permanentemente</strong> "{task.task_name}" de {task.person}
+                                  {task.date ? ` (${format(parse(task.date, 'yyyy-MM-dd', new Date()), "d MMM yyyy", { locale: pt })})` : ''}.
+                                  {isMissed && ' Deixa de contar como falha.'} Esta tarefa não volta a aparecer.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteMutation.mutate(task)}
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                >
+                                  Eliminar
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </div>
                     );

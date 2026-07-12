@@ -2,18 +2,18 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TaskService, PaymentService, TaskCancellationService } from '@/api/entities';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
-import { Lock, Shield, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Star, Loader2, Check, AlertTriangle } from 'lucide-react';
+import { Lock, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Loader2, Check, AlertTriangle } from 'lucide-react';
 import PhotoModal from '@/components/parents/PhotoModal';
 import ApprovalsTab from '@/components/parents/ApprovalsTab';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { supabase } from '@/api/supabaseClient';
-import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, isAwaitingDecision, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { motion } from 'framer-motion';
-import { format, parse, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import { format, parse, startOfWeek } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { toast } from 'sonner';
 
@@ -230,7 +230,7 @@ export default function Parents() {
     // work that may still be rejected.
     const isUnpaid = (t, person) => {
       if (t.person !== person) return false;
-      if (t.approval_status === 'pending') return false;
+      if (isAwaitingDecision(t)) return false;
       const lastPaid = lastPaidDates[person];
       return !lastPaid || t.date > lastPaid;
     };
@@ -529,6 +529,7 @@ export default function Parents() {
                   {personTasks.slice(0, 20).map(task => {
                     const ct = COMPLETION_TYPES[task.completion_type];
                     const isPending = task.approval_status === 'pending';
+                    const isRevision = task.approval_status === 'needs_revision';
                     const isRejected = task.approval_status === 'rejected';
                     const isCancelled = task.completion_type === 'cancelled';
                     const isMissed = task.completion_type === 'not_done' && !isRejected;
@@ -540,6 +541,9 @@ export default function Parents() {
                             <p className={`font-medium truncate ${isMissed ? 'line-through text-muted-foreground' : ''}`}>{task.task_name}</p>
                             {isPending && (
                               <Badge className="bg-amber-500/20 text-amber-700 dark:text-amber-400 text-[9px] border-0 px-1.5 leading-none">Pendente</Badge>
+                            )}
+                            {isRevision && (
+                              <Badge className="bg-orange-500/20 text-orange-700 dark:text-orange-400 text-[9px] border-0 px-1.5 leading-none">A corrigir</Badge>
                             )}
                             {isRejected && (
                               <Badge className="bg-destructive/15 text-destructive text-[9px] border-0 px-1.5 leading-none">Rejeitada</Badge>

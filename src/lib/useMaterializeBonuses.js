@@ -7,6 +7,7 @@ import {
   BONUS_TASK_NAME,
   BONUS_COMPLETION_TYPE,
   isBonusTask,
+  isAwaitingDecision,
   getCurrentWeekKey,
   getWeekEndDate,
   getLocalDateStr,
@@ -42,7 +43,7 @@ export function useMaterializeBonuses({ tasks, enabled = true }) {
         );
         if (personWeekTasks.length === 0) continue;
         // Wait for parents to decide on every photo before we materialize.
-        if (personWeekTasks.some(t => t.approval_status === 'pending')) continue;
+        if (personWeekTasks.some(isAwaitingDecision)) continue;
         const shouldHaveBonus = personWeekTasks.every(t => t.completion_type !== 'not_done');
         const existingBonus = tasks.find(
           t => t.person === person && t.week_key === weekKey && isBonusTask(t)

@@ -77,6 +77,27 @@ export default function ApprovalsTab({ approverId }) {
     onError: () => toast.error('Erro a rejeitar'),
   });
 
+  const revisionMutation = useMutation({
+    mutationFn: async ({ task, note }) => {
+      setIdPending(task.id, true);
+      const result = await TaskService.requestRevision(task.id, note, approverId);
+      sendPushNotification({
+        person: task.person,
+        title: '✏️ Tarefa para corrigir',
+        body: note ? `${task.task_name}: ${note}` : `Corrige "${task.task_name}"`,
+        url: '/',
+        tag: `revision-${task.id}`,
+      });
+      return result;
+    },
+    onSettled: (_data, _err, { task }) => setIdPending(task.id, false),
+    onSuccess: () => {
+      invalidate();
+      toast.success('Enviada para corrigir');
+    },
+    onError: () => toast.error('Erro ao enviar para corrigir'),
+  });
+
   const bulkApproveMutation = useMutation({
     mutationFn: async ({ person, tasks }) => {
       const ids = tasks.map(t => t.id);
@@ -173,6 +194,7 @@ export default function ApprovalsTab({ approverId }) {
                       isPending={pendingIds.has(task.id)}
                       onApprove={(t) => approveMutation.mutate(t)}
                       onReject={(t) => rejectMutation.mutate(t)}
+                      onRequestRevision={(t, note) => revisionMutation.mutate({ task: t, note })}
                       onPhotoClick={setPhotoUrl}
                     />
                   ))}

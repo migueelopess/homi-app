@@ -78,6 +78,58 @@ export const TaskService = {
     return data;
   },
 
+  // Parent bounces a task back to the child to fix a detail. The value is
+  // halved once (the `revised` flag prevents re-halving on repeated bounces)
+  // and the note is stored for the child. Status becomes 'needs_revision' until
+  // the child re-submits.
+  async requestRevision(id, note, approverId) {
+    const { data: current, error: fetchErr } = await supabase
+      .from('tasks')
+      .select('value, revised')
+      .eq('id', id)
+      .maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!current) throw new Error(`requestRevision: tarefa ${id} não encontrada`);
+
+    const halved = Math.round((current.value / 2) * 100) / 100;
+    const newValue = current.revised ? current.value : halved;
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        approval_status: 'needs_revision',
+        revision_note: note?.trim() || null,
+        revised: true,
+        value: newValue,
+        approved_by: approverId ?? null,
+        approved_at: null,
+      })
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error(`requestRevision: tarefa ${id} não foi atualizada (RLS ou linha inexistente)`);
+    return data;
+  },
+
+  // Child re-submits a corrected task with a new photo → back to parents for
+  // final approval. Value stays at the already-halved amount.
+  async resubmit(id, photo_url) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({
+        approval_status: 'pending',
+        photo_url,
+        revision_note: null,
+      })
+      .eq('id', id)
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error(`resubmit: tarefa ${id} não foi atualizada (RLS ou linha inexistente)`);
+    return data;
+  },
+
   async bulkApprove(ids, approverId) {
     const { data, error } = await supabase
       .from('tasks')

@@ -1,15 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { TaskService, ScheduledTaskService, OccasionalTaskService, PaymentService, TaskCancellationService } from '@/api/entities';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
-import { PEOPLE, PERSON_AVATARS, getCurrentWeekKey, getWeekTasks, PENALTIES, countFailures, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
+import { PEOPLE, getCurrentWeekKey, getWeekTasks, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
 import PersonCard from '@/components/home/PersonCard';
 import WeeklyBonusBanner from '@/components/home/WeeklyBonusBanner';
 import RecentActivity from '@/components/home/RecentActivity';
+import RevisionTasks from '@/components/home/RevisionTasks';
 import TodaySchedule from '@/components/home/TodaySchedule';
 import { useNotifications } from '@/lib/useNotifications';
 import { useMarkMissedTasks } from '@/lib/useMarkMissedTasks';
 import { useMaterializeBonuses } from '@/lib/useMaterializeBonuses';
-import { motion } from 'framer-motion';
 import { Calendar } from 'lucide-react';
 
 export default function Home() {
@@ -83,6 +83,14 @@ export default function Home() {
   return (
     <div className="max-w-lg mx-auto px-4 pt-6 pb-4">
       <p className="text-base font-bold text-foreground mb-6">Semana {currentWeek.split('-W')[1]} de {new Date().toLocaleString('pt-PT', { month: 'long' })} <span className="font-normal text-sm text-muted-foreground">· Sistema Familiar</span></p>
+
+      {/* Tasks a parent sent back to be corrected */}
+      {!userIsParent && person && (
+        <RevisionTasks
+          tasks={tasks.filter(t => t.person === person && t.approval_status === 'needs_revision')}
+          person={person}
+        />
+      )}
 
       {/* Today's Schedule for logged-in child */}
       {!userIsParent && person && (

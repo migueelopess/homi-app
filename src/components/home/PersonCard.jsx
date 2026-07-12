@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PERSON_AVATARS, PENALTIES, calculateEarnings, countFailures, getLocalDateStr, getCurrentMonthKey, getCurrentWeekKey, checkWeeklyBonus, isBonusTask, WEEKLY_BONUS } from '@/lib/taskHelpers';
-import { TrendingUp, AlertTriangle, Trophy } from 'lucide-react';
+import { PERSON_AVATARS, PENALTIES, calculateEarnings, countFailures, getLocalDateStr, getCurrentMonthKey, getCurrentWeekKey, checkWeeklyBonus, isBonusTask, isAwaitingDecision, WEEKLY_BONUS } from '@/lib/taskHelpers';
+import { AlertTriangle, Trophy } from 'lucide-react';
 
 export default function PersonCard({ person, tasks, weekTasks, lastPaidDate = null, index }) {
   const personTasks = tasks.filter(t => t.person === person);
@@ -12,9 +12,9 @@ export default function PersonCard({ person, tasks, weekTasks, lastPaidDate = nu
   const personMonthTasks = personTasks.filter(t => t.date && t.date.startsWith(currentMonth));
 
   // A task counts toward the displayed balance only if it's not already paid
-  // (date > lastPaidDate) and not pending approval (could still be rejected).
+  // (date > lastPaidDate) and its reward is decided (not pending/being corrected).
   const isUnpaid = (t) =>
-    t.approval_status !== 'pending' && (!lastPaidDate || t.date > lastPaidDate);
+    !isAwaitingDecision(t) && (!lastPaidDate || t.date > lastPaidDate);
   const monthEarnings = calculateEarnings(personMonthTasks.filter(isUnpaid));
   const weekEarnings = calculateEarnings(personWeekTasks.filter(isUnpaid));
   const failures = countFailures(tasks, person);

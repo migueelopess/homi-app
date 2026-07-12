@@ -201,6 +201,13 @@ export function isCountableForEarnings(task) {
   return !task.approval_status || task.approval_status === 'approved';
 }
 
+// A task whose reward is not yet decided: awaiting first approval ('pending')
+// or sent back to the child to correct ('needs_revision'). Neither should count
+// toward the weekly bonus or the amount owed to a child.
+export function isAwaitingDecision(task) {
+  return task?.approval_status === 'pending' || task?.approval_status === 'needs_revision';
+}
+
 export function calculateEarnings(tasks) {
   return tasks.reduce(
     (sum, t) => sum + (isCountableForEarnings(t) ? (t.value || 0) : 0),
@@ -225,8 +232,8 @@ export function checkWeeklyBonus(tasks, person, weekKey) {
     t => t.person === person && t.week_key === weekKey && !isBonusTask(t)
   );
   if (personWeekTasks.length === 0) return false;
-  // If any task is still awaiting approval, bonus eligibility is undecided.
-  if (personWeekTasks.some(t => t.approval_status === 'pending')) return false;
+  // If any task is still awaiting approval or being corrected, bonus is undecided.
+  if (personWeekTasks.some(isAwaitingDecision)) return false;
   return personWeekTasks.every(t => t.completion_type !== 'not_done');
 }
 

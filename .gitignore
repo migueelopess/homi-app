@@ -29,3 +29,8 @@ dist-ssr
 
 .env
 .vite
+.vercel
+.env*
+
+# Supabase CLI local state
+supabase/.temp

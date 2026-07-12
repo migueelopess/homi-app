@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { TaskService, TaskDelegationService, TaskCancellationService, CleanupLogService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
-import { getWeekKey, getCurrentMonthKey, sameTaskSlot } from './taskHelpers';
+import { getWeekKey, getCurrentMonthKey, sameTaskSlot, countFailures, applyCancellations, PENALTIES } from './taskHelpers';
 
 // Module-level Set — persists across component remounts within the same app session
 const _checkedPersons = new Set();
@@ -35,21 +35,19 @@ export function useMarkMissedTasks({ scheduledTasks, tasks, person, enabled }) {
         // If table doesn't exist yet, continue without
       }
 
-      // Fetch cancellations for the last 7 days so we don't mark cancelled tasks as missed
+      // Fetch all cancellations so we (a) don't mark cancelled tasks as missed
+      // and (b) exclude them when counting a child's outstanding failures.
       let cancellations = [];
       try {
-        const results = await Promise.all(
-          Array.from({ length: 7 }, (_, i) => {
-            const d = new Date(today);
-            d.setDate(today.getDate() - (i + 1));
-            const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            return TaskCancellationService.getByDate(ds);
-          })
-        );
-        cancellations = results.flat();
+        cancellations = await TaskCancellationService.list();
       } catch (e) {
         // If table doesn't exist yet, continue without
       }
+
+      // Outstanding failures BEFORE this run — counted exactly like the child's
+      // "X/3 falhas" card (not_done, no penalty applied, cancellations excluded).
+      const beforeFailures = countFailures(applyCancellations(tasks, cancellations), person);
+      let createdFailures = 0;
 
       for (let daysBack = 1; daysBack <= 7; daysBack++) {
         const date = new Date(today);
@@ -105,6 +103,7 @@ export function useMarkMissedTasks({ scheduledTasks, tasks, person, enabled }) {
               month_key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
               approval_status: 'approved',
             });
+            createdFailures++;
 
             // Notify parents about missed task (only for yesterday)
             if (daysBack === 1) {
@@ -119,6 +118,20 @@ export function useMarkMissedTasks({ scheduledTasks, tasks, person, enabled }) {
             }
           }
         }
+      }
+
+      // Alert parents once when the child crosses the 3-failure penalty
+      // threshold in this run (2→3). Re-runs create no new failures, so it
+      // won't fire again at 4, 5, ... — only after a penalty is applied and
+      // 3 fresh failures accrue again.
+      if (beforeFailures < 3 && beforeFailures + createdFailures >= 3) {
+        sendPushNotification({
+          person: '__parents__',
+          title: `⚠️ ${person} chegou às 3 falhas`,
+          body: `Já podes aplicar o castigo: ${PENALTIES[person] || 'castigo'}`,
+          url: '/pais',
+          tag: `penalty-threshold-${person}`,
+        });
       }
     }
 

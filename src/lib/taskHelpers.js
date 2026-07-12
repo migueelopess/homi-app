@@ -12,7 +12,7 @@ export const COMPLETION_TYPES = {
   cancelled: { label: 'Cancelada pelos pais', value: 0, emoji: '🚫', color: 'text-muted-foreground' },
 };
 
-export const WEEKLY_BONUS = 4.00;
+export const WEEKLY_BONUS = 5.00;
 
 // Reserved task name used to persist the weekly bonus as a regular task row
 export const BONUS_TASK_NAME = 'Bónus Semanal';

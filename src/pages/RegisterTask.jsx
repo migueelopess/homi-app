@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { CheckCircle2, Camera, Loader2, Lock } from 'lucide-react';
+import { CheckCircle2, Camera, Loader2, Lock, Plus } from 'lucide-react';
 import { COMPLETION_TYPES, PERSON_AVATARS, getTaskValue, getWeekKey, getCurrentMonthKey, getLocalDateStr } from '@/lib/taskHelpers';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import TaskGrid from '@/components/register/TaskGrid';
@@ -209,6 +209,18 @@ export default function RegisterTask() {
                 <Camera className="w-3.5 h-3.5" /> Toca numa tarefa para tirar a foto de prova e registar.
               </p>
               <TaskGrid selectedTask={taskName} onSelect={handleSelect} />
+
+              {/* Clean custom-task button below the whole grid */}
+              <button
+                onClick={() => setTaskName(taskName === 'custom' ? '' : 'custom')}
+                className={`w-full mt-2.5 flex items-center justify-center gap-2 h-12 rounded-2xl border border-dashed text-sm font-semibold transition-colors ${
+                  taskName === 'custom'
+                    ? 'border-primary/50 text-primary bg-primary/5'
+                    : 'border-border text-muted-foreground hover:border-primary/40 hover:text-primary'
+                }`}
+              >
+                <Plus className="w-4 h-4" /> Adicionar tarefa personalizada
+              </button>
 
               {taskName === 'custom' && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-3 space-y-2">

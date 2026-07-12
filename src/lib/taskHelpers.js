@@ -48,6 +48,8 @@ export const TASK_ICONS = {
   'Escovar Sidney': '🪮',
   'Limpeza mensal': '🧹',
   'Limpeza semanal': '🧽',
+  'Arrumar o quarto': '🛏️',
+  'Fatura IQA': '🧾',
   'Bónus Semanal': '🏆',
 };
 
@@ -65,6 +67,8 @@ export const COMMON_TASKS = [
   'Escovar Sidney',
   'Limpeza mensal',
   'Limpeza semanal',
+  'Arrumar o quarto',
+  'Fatura IQA',
 ];
 
 export function getTaskIcon(taskName) {
@@ -174,9 +178,20 @@ export function getCurrentWeekNumber() {
 
 export const SIDNEY_TASKS = ['Higiene Sidney', 'Passear Sidney', 'Escovar Sidney'];
 
+// Tasks with a fixed reward regardless of how/when they were done — as long as
+// they still count as done. e.g. "Fatura IQA" (using the company NIF on a meal)
+// is always worth €0.50, never the €1.00/€0.50 on-time tiers.
+export const FIXED_TASK_VALUES = {
+  'Fatura IQA': 0.50,
+};
+
 export function getTaskValue(taskName, completionType) {
   if (SIDNEY_TASKS.includes(taskName)) return 0;
-  return COMPLETION_TYPES[completionType]?.value ?? 0;
+  const base = COMPLETION_TYPES[completionType]?.value ?? 0;
+  // Only override positive (earning) completions — a missed/rejected fixed-value
+  // task must still be worth 0.
+  if (base > 0 && taskName in FIXED_TASK_VALUES) return FIXED_TASK_VALUES[taskName];
+  return base;
 }
 
 // Tasks pending approval don't yet count toward earnings.

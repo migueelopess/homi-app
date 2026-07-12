@@ -5,6 +5,7 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { ThemeProvider } from '@/lib/ThemeContext';
 import AppLayout from './components/layout/AppLayout';
 import Home from './pages/Home';
 import RegisterTask from './pages/RegisterTask';
@@ -13,6 +14,7 @@ import Parents from './pages/Parents';
 import Rotinas from './pages/Rotinas';
 import Tarefas from './pages/Tarefas';
 import Delegar from './pages/Delegar';
+import Definicoes from './pages/Definicoes';
 import Login from './pages/Login';
 import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 
@@ -46,6 +48,7 @@ const AuthenticatedApp = () => {
         <Route path="/rotinas" element={<Rotinas />} />
         <Route path="/tarefas" element={<Tarefas />} />
         <Route path="/delegar" element={<Delegar />} />
+        <Route path="/definicoes" element={<Definicoes />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
@@ -55,15 +58,17 @@ const AuthenticatedApp = () => {
 
 function App() {
   return (
-    <AuthProvider>
-      <QueryClientProvider client={queryClientInstance}>
-        <Router>
-          <AuthenticatedApp />
-        </Router>
-        <Toaster />
-        <SonnerToaster position="top-center" richColors />
-      </QueryClientProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <QueryClientProvider client={queryClientInstance}>
+          <Router>
+            <AuthenticatedApp />
+          </Router>
+          <Toaster />
+          <SonnerToaster position="top-center" richColors />
+        </QueryClientProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }
 

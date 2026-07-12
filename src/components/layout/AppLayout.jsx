@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Home, PlusCircle, Trophy, Shield, LogOut, CalendarDays, BarChart2, Bell, ClipboardList, Handshake } from 'lucide-react';
+import { Home, PlusCircle, Trophy, LogOut, CalendarDays, BarChart2, Bell, ClipboardList, Handshake } from 'lucide-react';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { useAuth } from '@/lib/AuthContext';
 import { TaskService, ScheduledTaskService, OccasionalTaskService, TaskDelegationService } from '@/api/entities';
@@ -71,14 +71,18 @@ export default function AppLayout() {
           </div>
           {user && (
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 bg-muted rounded-full px-3 py-1">
+              <Link
+                to="/definicoes"
+                aria-label="Definições"
+                className="flex items-center gap-1.5 bg-muted rounded-full px-3 py-1 hover:bg-muted/70 active:scale-95 transition"
+              >
                 <span className="text-sm">
                   {userIsParent ? '👨‍👩‍👧' : (PERSON_AVATARS[user.linked_name] || '👤')}
                 </span>
                 <span className="text-xs font-semibold text-foreground">
                   {userIsParent ? 'Pais' : (user.linked_name || user.full_name)}
                 </span>
-              </div>
+              </Link>
               {!userIsParent && person && (
                 <NotificationBell
                   scheduledTasks={scheduledTasks}

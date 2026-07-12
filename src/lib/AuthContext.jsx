@@ -67,12 +67,26 @@ export const AuthProvider = ({ children }) => {
     setIsAuthenticated(false);
   };
 
+  // Update the current user's profile row and refresh local state.
+  const updateProfile = async (fields) => {
+    if (!user?.id) return { error: new Error('no-user') };
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(fields)
+      .eq('id', user.id)
+      .select('id, role, linked_name, full_name')
+      .single();
+    if (!error && data) setUser(data);
+    return { data, error };
+  };
+
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      isAuthenticated, 
+    <AuthContext.Provider value={{
+      user,
+      isAuthenticated,
       isLoadingAuth,
       logout,
+      updateProfile,
     }}>
       {children}
     </AuthContext.Provider>

@@ -1,7 +1,7 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Home, PlusCircle, Trophy, LogOut, CalendarDays, BarChart2, Bell, ClipboardList, Handshake } from 'lucide-react';
+import { Home, PlusCircle, Trophy, CalendarDays, BarChart2, Bell, ClipboardList, Handshake } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
-import { useAuth } from '@/lib/AuthContext';
 import { TaskService, ScheduledTaskService, OccasionalTaskService, TaskDelegationService } from '@/api/entities';
 import { PERSON_AVATARS, getLocalDateStr } from '@/lib/taskHelpers';
 import { useQuery } from '@tanstack/react-query';
@@ -11,7 +11,6 @@ import { usePushSubscription } from '@/lib/usePushSubscription';
 export default function AppLayout() {
   const location = useLocation();
   const { data: user } = useCurrentUser();
-  const { logout } = useAuth();
   const userIsParent = isParent(user);
   const person = user?.linked_name;
   const { pushSupported, pushSubscribed, subscribe: pushSubscribe } = usePushSubscription(user);
@@ -103,48 +102,63 @@ export default function AppLayout() {
                   <Bell className="w-4 h-4" />
                 </button>
               )}
-              <button
-                onClick={() => logout()}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
             </div>
           )}
         </div>
       </header>
 
-      <div className="flex-1 pb-20">
+      <div className="flex-1 pb-28">
         <Outlet />
       </div>
 
-      {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-card/90 backdrop-blur-sm border-t border-border z-50">
-        <div className="max-w-lg mx-auto flex justify-around items-center h-16 px-2">
-          {navItems.map(({ path, icon: Icon, label, badge }) => {
-            const isActive = location.pathname === path;
-            return (
-              <Link
-                key={path}
-                to={path}
-                className={`flex flex-col items-center gap-0.5 px-4 py-1.5 rounded-xl transition-all duration-200 relative ${
-                  isActive
-                    ? 'text-primary scale-105'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.5]' : ''}`} />
-                {badge > 0 && (
-                  <span className="absolute -top-0.5 right-1 w-4 h-4 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center">
-                    {badge}
+      {/* Bottom Navigation — floating glass pill with a sliding active indicator */}
+      <nav className="fixed bottom-0 inset-x-0 z-50 pointer-events-none">
+        <div className="max-w-lg mx-auto px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="pointer-events-auto relative flex items-center gap-1 rounded-[26px] p-1.5
+                          bg-card/70 dark:bg-card/50 backdrop-blur-2xl backdrop-saturate-150
+                          border border-white/25 dark:border-white/10
+                          shadow-[0_8px_30px_rgba(0,0,0,0.12)]">
+            {/* Liquid-glass sheen */}
+            <div className="pointer-events-none absolute inset-0 rounded-[26px] bg-gradient-to-b from-white/20 to-transparent dark:from-white/[0.06]" />
+
+            {navItems.map(({ path, icon: Icon, label, badge }) => {
+              const isActive = location.pathname === path;
+              return (
+                <Link
+                  key={path}
+                  to={path}
+                  className="relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-[20px] active:scale-90 transition-transform"
+                >
+                  {isActive && (
+                    <motion.span
+                      layoutId="navActivePill"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      className="absolute inset-0 rounded-[20px] bg-primary/15 ring-1 ring-primary/20"
+                    />
+                  )}
+                  <span className="relative z-10">
+                    <Icon
+                      className={`w-[22px] h-[22px] transition-all duration-300 ${
+                        isActive ? 'text-primary scale-110 stroke-[2.4]' : 'text-muted-foreground'
+                      }`}
+                    />
+                    {badge > 0 && (
+                      <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center">
+                        {badge}
+                      </span>
+                    )}
                   </span>
-                )}
-                <span className={`text-[10px] font-medium ${isActive ? 'font-semibold' : ''}`}>
-                  {label}
-                </span>
-              </Link>
-            );
-          })}
+                  <span
+                    className={`relative z-10 text-[10px] leading-none transition-colors duration-300 ${
+                      isActive ? 'text-primary font-semibold' : 'text-muted-foreground font-medium'
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
         </div>
       </nav>
     </div>

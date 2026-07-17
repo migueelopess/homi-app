@@ -1,9 +1,11 @@
-import { forwardRef, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { TaskService, TaskReminderService, OccasionalTaskService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { uploadTaskPhoto } from '@/api/storage';
-import { SIDNEY_TASKS, getTaskValue, getWeekKey, getCurrentMonthKey, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
+import { COMPLETION_TYPES, SIDNEY_TASKS, getTaskValue, getWeekKey, getCurrentMonthKey, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
+import { motion, AnimatePresence } from 'framer-motion';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 function isWithinTimeWindow(endTime) {
@@ -32,13 +34,14 @@ function taskValue(task, completionType) {
 }
 
 // One-tap task completion: `capture(task)` opens the OS camera straight from
-// the tap, and the photo submits the task immediately — same flow as the
-// Registar page. No modal, no confirm button; feedback happens via toasts.
+// the tap, and the photo submits the task immediately — same flow and same
+// saving/success screens as the Registar page (no toasts).
 const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef(null);
   const pendingTaskRef = useRef(null);
-  const busyRef = useRef(false);
+  // null | 'saving' | { completion_type, value } (success)
+  const [phase, setPhase] = useState(null);
   const today = getLocalDateStr();
 
   // Reminders sent to this person today — reduce the task's value.
@@ -52,7 +55,7 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
     // Must be called synchronously inside the tap handler so the browser
     // treats the camera open as a user gesture.
     capture(task) {
-      if (!task || busyRef.current) return;
+      if (!task || phase) return;
       pendingTaskRef.current = task;
       fileInputRef.current?.click();
     },
@@ -101,26 +104,28 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
         tag: `task-submitted-${person}-${task.task_name}-${today}`,
       });
 
-      return { task, value, occasionalTaskId };
+      return { completion_type, value, occasionalTaskId };
     },
-    onSuccess: ({ task, value, occasionalTaskId }) => {
+    onSuccess: ({ completion_type, value, occasionalTaskId }) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       if (occasionalTaskId) {
         queryClient.invalidateQueries({ queryKey: ['occasionalTasks'] });
         queryClient.invalidateQueries({ queryKey: ['taskDelegations'] });
       }
-      toast.success(`"${task.task_name}" enviada — à espera de aprovação 📸 (+€${value.toFixed(2)})`, {
-        id: 'task-capture',
-        duration: 3500,
-      });
+      setPhase({ completion_type, value });
     },
     onError: () => {
-      toast.error('Não foi possível registar a tarefa. Tenta de novo.', { id: 'task-capture' });
-    },
-    onSettled: () => {
-      busyRef.current = false;
+      setPhase(null);
+      toast.error('Não foi possível registar a tarefa. Tenta de novo.');
     },
   });
+
+  // Auto-dismiss the success screen (same 2.5s as the Registar page).
+  useEffect(() => {
+    if (!phase || phase === 'saving') return;
+    const t = setTimeout(() => setPhase(null), 2500);
+    return () => clearTimeout(t);
+  }, [phase]);
 
   const handlePhotoChange = (e) => {
     const file = e.target.files?.[0];
@@ -128,20 +133,69 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
     const task = pendingTaskRef.current;
     pendingTaskRef.current = null;
     if (!file || !task) return; // camera cancelled — nothing to do
-    busyRef.current = true;
-    toast.loading(`A registar "${task.task_name}"...`, { id: 'task-capture' });
+    setPhase('saving');
     createMutation.mutate({ task, file });
   };
 
+  const success = phase && phase !== 'saving' ? phase : null;
+
   return (
-    <input
-      ref={fileInputRef}
-      type="file"
-      accept="image/*"
-      capture="environment"
-      onChange={handlePhotoChange}
-      className="hidden"
-    />
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handlePhotoChange}
+        className="hidden"
+      />
+
+      {/* Full-area overlay with the exact saving/success screens from the
+          Registar page. Sits below the header/footer (z-50) so the app chrome
+          stays visible, just like on Registar. */}
+      <AnimatePresence>
+        {phase && (
+          <motion.div
+            key="capture-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-40 bg-background flex flex-col items-center justify-center px-4"
+          >
+            {success ? (
+              <motion.div
+                key="success"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex flex-col items-center justify-center"
+              >
+                <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                  <CheckCircle2 className="w-10 h-10 text-primary" />
+                </div>
+                <h2 className="text-xl font-bold text-foreground">Tarefa Registada!</h2>
+                <p className="text-sm text-muted-foreground mt-1">À espera de aprovação dos pais 📸</p>
+                <div className="mt-4 flex items-center gap-2 px-4 py-2 rounded-full bg-muted/60">
+                  <span className="text-lg">{COMPLETION_TYPES[success.completion_type].emoji}</span>
+                  <span className={`text-sm font-bold ${COMPLETION_TYPES[success.completion_type].color}`}>
+                    +€{success.value.toFixed(2)}
+                  </span>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="saving"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="flex flex-col items-center justify-center"
+              >
+                <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
+                <p className="text-sm text-muted-foreground">A registar a tarefa...</p>
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 });
 

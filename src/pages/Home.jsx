@@ -11,6 +11,7 @@ import { useNotifications } from '@/lib/useNotifications';
 import { useMarkMissedTasks } from '@/lib/useMarkMissedTasks';
 import { useMaterializeBonuses } from '@/lib/useMaterializeBonuses';
 import { Calendar } from 'lucide-react';
+import { HomeSkeleton } from '@/components/layout/PageSkeleton';
 
 export default function Home() {
   const currentWeek = getCurrentWeekKey();
@@ -73,11 +74,7 @@ export default function Home() {
   const isLoading = isLoadingTasks || isLoadingScheduled;
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
+    return <HomeSkeleton />;
   }
 
   return (

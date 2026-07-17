@@ -2,12 +2,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TaskDelegationService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
-import { PEOPLE, PERSON_AVATARS, TASK_ICONS, getLocalDateStr } from '@/lib/taskHelpers';
+import { PERSON_AVATARS, TASK_ICONS, getLocalDateStr } from '@/lib/taskHelpers';
 import { Lock, Handshake, Clock, Inbox, Send, CheckCircle2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
+import { PageSkeleton } from '@/components/layout/PageSkeleton';
 
 export default function Delegar() {
   const { data: user, isLoading: loadingUser } = useCurrentUser();
@@ -48,11 +49,7 @@ export default function Delegar() {
   });
 
   if (loadingUser || loadingDelegations) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   if (userIsParent || !person) {

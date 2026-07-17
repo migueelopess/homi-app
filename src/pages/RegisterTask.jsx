@@ -12,6 +12,7 @@ import { CheckCircle2, Camera, Loader2, Lock, Plus } from 'lucide-react';
 import { COMPLETION_TYPES, PERSON_AVATARS, getTaskValue, getWeekKey, getCurrentMonthKey, getLocalDateStr } from '@/lib/taskHelpers';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import TaskGrid from '@/components/register/TaskGrid';
+import { PageSkeleton } from '@/components/layout/PageSkeleton';
 
 export default function RegisterTask() {
   const queryClient = useQueryClient();
@@ -111,11 +112,7 @@ export default function RegisterTask() {
   };
 
   if (loadingUser) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   // Parents can't register tasks

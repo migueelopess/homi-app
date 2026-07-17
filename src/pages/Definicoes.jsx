@@ -11,6 +11,7 @@ import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { useTheme } from '@/lib/ThemeContext';
 import { usePushSubscription } from '@/lib/usePushSubscription';
 import { PERSON_AVATARS } from '@/lib/taskHelpers';
+import { PageSkeleton } from '@/components/layout/PageSkeleton';
 
 const THEME_OPTIONS = [
   { value: 'light', label: 'Claro', icon: Sun },
@@ -76,11 +77,7 @@ export default function Definicoes() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 text-primary animate-spin" />
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   return (

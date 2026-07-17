@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Home, PlusCircle, Trophy, CalendarDays, BarChart2, Bell, ClipboardList, Handshake } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -7,6 +8,7 @@ import { PERSON_AVATARS, getLocalDateStr } from '@/lib/taskHelpers';
 import { useQuery } from '@tanstack/react-query';
 import NotificationBell from '@/components/notifications/NotificationBell';
 import HomiMark from '@/components/layout/HomiMark';
+import { PageSkeleton } from '@/components/layout/PageSkeleton';
 import { usePushSubscription } from '@/lib/usePushSubscription';
 
 export default function AppLayout() {
@@ -109,8 +111,15 @@ export default function AppLayout() {
         </div>
       </header>
 
+      {/* Suspense lives INSIDE the layout so the header and the bottom nav
+          stay mounted and tappable while a lazy page chunk loads. The keyed
+          wrapper replays a light fade/slide on every route change. */}
       <div className="flex-1 pb-28">
-        <Outlet />
+        <Suspense fallback={<PageSkeleton />}>
+          <div key={location.pathname} className="animate-page-in">
+            <Outlet />
+          </div>
+        </Suspense>
       </div>
 
       {/* Bottom Navigation — floating glass pill with a sliding active indicator */}
@@ -129,7 +138,7 @@ export default function AppLayout() {
                 <Link
                   key={path}
                   to={path}
-                  className="relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-[20px] active:scale-90 transition-transform"
+                  className="relative flex-1 flex flex-col items-center justify-center gap-0.5 py-2 rounded-[20px] active:scale-90 transition-transform select-none [touch-action:manipulation] [-webkit-tap-highlight-color:transparent]"
                 >
                   {isActive && (
                     <motion.span

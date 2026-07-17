@@ -16,6 +16,7 @@ import { motion } from 'framer-motion';
 import { format, parse, startOfWeek } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { toast } from 'sonner';
+import { PageSkeleton } from '@/components/layout/PageSkeleton';
 
 export default function Parents() {
   const queryClient = useQueryClient();
@@ -156,11 +157,7 @@ export default function Parents() {
   const monthTasks = getMonthTasks(tasks, currentMonth);
 
   if (isLoading || loadingUser) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   if (!isParent(user)) {

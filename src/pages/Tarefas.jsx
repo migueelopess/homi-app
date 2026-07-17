@@ -10,8 +10,9 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { format, addDays, subDays, parse, isToday } from 'date-fns';
+import { format, addDays, subDays, isToday } from 'date-fns';
 import { pt } from 'date-fns/locale';
+import { PageSkeleton } from '@/components/layout/PageSkeleton';
 
 const DAYS_MAP_REVERSE = {
   0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday',
@@ -288,11 +289,7 @@ export default function Tarefas() {
   }, [scheduledTasks, occasionalTasks, completedTasks, reminders, extensions, cancellations, todayDelegations, dayKey, dateStr]);
 
   if (loadingUser || loadingSched || loadingOcc || loadingTasks || loadingReminders || loadingDelegations || loadingExtensions || loadingCancellations) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   if (!isParent(user)) {

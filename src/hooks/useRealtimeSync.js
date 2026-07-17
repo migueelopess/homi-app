@@ -33,7 +33,19 @@ export function useRealtimeSync() {
       })
       .subscribe();
 
+    // Realtime is paused while the PWA is backgrounded, so changes made in
+    // the meantime were never pushed to us. On return to the foreground,
+    // mark everything stale — active queries refetch in the background
+    // (cached data stays on screen, no spinners).
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        queryClient.invalidateQueries();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
     return () => {
+      document.removeEventListener('visibilitychange', onVisible);
       supabase.removeChannel(channel);
     };
   }, [queryClient]);

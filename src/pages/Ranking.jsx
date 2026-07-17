@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { TaskService, TaskCancellationService } from '@/api/entities';
-import { PEOPLE, PERSON_AVATARS, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, isBonusTask, applyCancellations } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, isBonusTask, applyCancellations } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { motion } from 'framer-motion';
 import { Crown, Medal, Star, TrendingUp } from 'lucide-react';
+import { PageSkeleton } from '@/components/layout/PageSkeleton';
 
 export default function Ranking() {
   const currentWeek = getCurrentWeekKey();
@@ -53,11 +54,7 @@ export default function Ranking() {
   ];
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   const RankingList = ({ ranking }) => (

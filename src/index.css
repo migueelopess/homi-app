@@ -1,5 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-
+/* Inter is loaded non-blocking from index.html (preconnect + async link) */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -76,6 +75,15 @@
     --sidebar-border: 150 10% 20%;
     --sidebar-ring: 145 55% 45%;
   }
+}
+
+/* Light fade/slide applied to page content on every route change */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.animate-page-in {
+  animation: page-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @layer base {

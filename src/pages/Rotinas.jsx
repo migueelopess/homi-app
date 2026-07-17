@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { ScheduledTaskService, OccasionalTaskService } from '@/api/entities';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
-import { Lock, CalendarDays, Sparkles } from 'lucide-react';
+import { Lock, CalendarDays } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import ScheduledTaskManager from '@/components/parents/ScheduledTaskManager';
 import OccasionalTaskManager from '@/components/parents/OccasionalTaskManager';
+import { PageSkeleton } from '@/components/layout/PageSkeleton';
 
 export default function Rotinas() {
   const { data: user, isLoading: loadingUser } = useCurrentUser();
@@ -21,11 +22,7 @@ export default function Rotinas() {
   });
 
   if (isLoading || loadingUser || loadingOccasional) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
-      </div>
-    );
+    return <PageSkeleton />;
   }
 
   if (!isParent(user)) {

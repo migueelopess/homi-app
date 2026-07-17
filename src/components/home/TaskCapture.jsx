@@ -1,4 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { TaskService, TaskReminderService, OccasionalTaskService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
@@ -139,6 +140,55 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
 
   const success = phase && phase !== 'saving' ? phase : null;
 
+  // The saving/success screen is rendered through a portal to document.body so
+  // it can never be clipped or mispositioned by a transformed / will-change
+  // ancestor (framer-motion cards, the page-transition wrapper, etc.) — those
+  // create a containing block that would otherwise trap a `fixed` overlay.
+  const overlay = (
+    <AnimatePresence>
+      {phase && (
+        <motion.div
+          key="capture-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[60] bg-background flex flex-col items-center justify-center px-4"
+        >
+          {success ? (
+            <motion.div
+              key="success"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="flex flex-col items-center justify-center"
+            >
+              <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                <CheckCircle2 className="w-10 h-10 text-primary" />
+              </div>
+              <h2 className="text-xl font-bold text-foreground">Tarefa Registada!</h2>
+              <p className="text-sm text-muted-foreground mt-1">À espera de aprovação dos pais 📸</p>
+              <div className="mt-4 flex items-center gap-2 px-4 py-2 rounded-full bg-muted/60">
+                <span className="text-lg">{COMPLETION_TYPES[success.completion_type].emoji}</span>
+                <span className={`text-sm font-bold ${COMPLETION_TYPES[success.completion_type].color}`}>
+                  +€{success.value.toFixed(2)}
+                </span>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="saving"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex flex-col items-center justify-center"
+            >
+              <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
+              <p className="text-sm text-muted-foreground">A registar a tarefa...</p>
+            </motion.div>
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
   return (
     <>
       <input
@@ -149,52 +199,7 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
         onChange={handlePhotoChange}
         className="hidden"
       />
-
-      {/* Full-area overlay with the exact saving/success screens from the
-          Registar page. Sits below the header/footer (z-50) so the app chrome
-          stays visible, just like on Registar. */}
-      <AnimatePresence>
-        {phase && (
-          <motion.div
-            key="capture-overlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-40 bg-background flex flex-col items-center justify-center px-4"
-          >
-            {success ? (
-              <motion.div
-                key="success"
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="flex flex-col items-center justify-center"
-              >
-                <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                  <CheckCircle2 className="w-10 h-10 text-primary" />
-                </div>
-                <h2 className="text-xl font-bold text-foreground">Tarefa Registada!</h2>
-                <p className="text-sm text-muted-foreground mt-1">À espera de aprovação dos pais 📸</p>
-                <div className="mt-4 flex items-center gap-2 px-4 py-2 rounded-full bg-muted/60">
-                  <span className="text-lg">{COMPLETION_TYPES[success.completion_type].emoji}</span>
-                  <span className={`text-sm font-bold ${COMPLETION_TYPES[success.completion_type].color}`}>
-                    +€{success.value.toFixed(2)}
-                  </span>
-                </div>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="saving"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex flex-col items-center justify-center"
-              >
-                <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-                <p className="text-sm text-muted-foreground">A registar a tarefa...</p>
-              </motion.div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {createPortal(overlay, document.body)}
     </>
   );
 });

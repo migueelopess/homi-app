@@ -1,4 +1,4 @@
-import { COMPLETION_TYPES, PERSON_AVATARS, getTaskIcon, isBonusTask } from '@/lib/taskHelpers';
+import { COMPLETION_TYPES, getTaskIcon, isBonusTask } from '@/lib/taskHelpers';
 import { format, parse } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { motion } from 'framer-motion';

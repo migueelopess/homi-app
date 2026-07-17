@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Star, Trophy } from 'lucide-react';
-import { PEOPLE, WEEKLY_BONUS, checkWeeklyBonus, getCurrentWeekKey } from '@/lib/taskHelpers';
+import { PEOPLE, WEEKLY_BONUS, checkWeeklyBonus } from '@/lib/taskHelpers';
 
 export default function WeeklyBonusBanner({ tasks, currentWeek }) {
   const bonusStatus = PEOPLE.map(person => ({

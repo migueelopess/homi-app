@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { TaskDelegationService, TaskExtensionService, TaskCancellationService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
 import { TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
-import TaskCompleteModal from './TaskCompleteModal';
+import TaskCapture from './TaskCapture';
 import { toast } from 'sonner';
 
 const DAYS_MAP = {
@@ -43,7 +43,7 @@ function isActive(startTime, endTime) {
 }
 
 export default function TodaySchedule({ scheduledTasks, todayTasks, person, occasionalTasks = [] }) {
-  const [selectedTask, setSelectedTask] = useState(null);
+  const captureRef = useRef(null);
   const [delegateConfirm, setDelegateConfirm] = useState(null);
   const queryClient = useQueryClient();
   const todayKey = getTodayKey();
@@ -197,8 +197,8 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                   overdue ? 'border-destructive/40 bg-destructive/5' : ''
                 }`}
               >
-                <div className="text-xl flex-shrink-0 cursor-pointer" onClick={() => setSelectedTask({ ...task, _occasional: true, _isExtended: isExtended })}>{TASK_ICONS[task.task_name] || '✅'}</div>
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setSelectedTask({ ...task, _occasional: true, _isExtended: isExtended })}>
+                <div className="text-xl flex-shrink-0 cursor-pointer" onClick={() => captureRef.current?.capture({ ...task, _occasional: true, _isExtended: isExtended })}>{TASK_ICONS[task.task_name] || '✅'}</div>
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => captureRef.current?.capture({ ...task, _occasional: true, _isExtended: isExtended })}>
                   <div className="flex items-center gap-1.5">
                     <p className="text-sm font-semibold text-foreground">{task.task_name}</p>
                     <Star className="w-3 h-3 text-accent fill-accent" />
@@ -246,7 +246,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
               transition={{ delay: i * 0.05 }}
             >
               <Card
-                onClick={() => setSelectedTask({ ...d, person, _delegated: true, _from: d.from_person, _occasional: true, _isExtended: isExtended })}
+                onClick={() => captureRef.current?.capture({ ...d, person, _delegated: true, _from: d.from_person, _occasional: true, _isExtended: isExtended })}
                 className={`p-3 flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-all border-blue-500/30 bg-blue-500/5 ${
                   overdue ? 'border-destructive/40 bg-destructive/5' : ''
                 }`}
@@ -300,8 +300,8 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                   'cursor-pointer hover:border-primary/20 active:scale-[0.98]'
                 }`}
               >
-                <div className="text-xl flex-shrink-0" onClick={() => !isDone && setSelectedTask({ ...task, _isExtended: isExtended })}>{TASK_ICONS[task.task_name] || '✅'}</div>
-                <div className="flex-1 min-w-0" onClick={() => !isDone && setSelectedTask({ ...task, _isExtended: isExtended })}>
+                <div className="text-xl flex-shrink-0" onClick={() => !isDone && captureRef.current?.capture({ ...task, _isExtended: isExtended })}>{TASK_ICONS[task.task_name] || '✅'}</div>
+                <div className="flex-1 min-w-0" onClick={() => !isDone && captureRef.current?.capture({ ...task, _isExtended: isExtended })}>
                   <p className={`text-sm font-semibold ${isDone ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
                     {task.task_name}
                   </p>
@@ -352,7 +352,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
               transition={{ delay: i * 0.05 }}
             >
               <Card
-                onClick={() => !isDone && setSelectedTask({ ...d, person, _delegated: true, _from: d.from_person, task_name: d.task_name, end_time: d.end_time, _isExtended: isExtended })}
+                onClick={() => !isDone && captureRef.current?.capture({ ...d, person, _delegated: true, _from: d.from_person, task_name: d.task_name, end_time: d.end_time, _isExtended: isExtended })}
                 className={`p-3 flex items-center gap-3 transition-all ${
                   isDone ? 'opacity-60 bg-muted/50' :
                   overdue ? 'border-destructive/40 bg-destructive/5 cursor-pointer active:scale-[0.98]' :
@@ -389,17 +389,8 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
         })}
       </div>
 
-      <TaskCompleteModal
-        task={selectedTask}
-        person={person}
-        isExtended={selectedTask?._isExtended ?? false}
-        occasionalTaskId={
-          selectedTask?._occasional
-            ? (selectedTask?._delegated ? selectedTask?.occasional_task_id : selectedTask?.id)
-            : undefined
-        }
-        onClose={() => setSelectedTask(null)}
-      />
+      {/* Hidden camera input — tap a task, take the photo, done. */}
+      <TaskCapture ref={captureRef} person={person} />
 
       {/* Delegation confirmation dialog */}
       {delegateConfirm && (

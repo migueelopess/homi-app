@@ -305,17 +305,6 @@ export default function Parents() {
           </AlertDialog>
         </div>
 
-        {olderTotal > 0 && (
-          <div className="mb-3 p-3 rounded-lg bg-amber-500/15 border-2 border-amber-500/50">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-300 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-amber-800 dark:text-amber-200 leading-snug">
-                <strong className="text-base">€{olderTotal.toFixed(2)}</strong> por pagar de <strong>{olderLabel}</strong>. O botão "Pagar todos" inclui este valor.
-              </p>
-            </div>
-          </div>
-        )}
-
         <div className="space-y-2">
           {PEOPLE.map((person) => {
             const periodAmt = periodUnpaid[person];

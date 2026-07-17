@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Loader2, Mail, Lock, AlertCircle, Check } from 'lucide-react';
+import HomiMark from '@/components/layout/HomiMark';
 
 const RING_SIZES = [700, 560, 420, 300];
 const RING_OPACITIES = [0.07, 0.11, 0.15, 0.19];
@@ -87,8 +88,12 @@ export default function Login() {
       <div className="relative w-full max-w-sm z-10">
         {/* Logo */}
         <div className="text-center mb-10">
+          <HomiMark
+            className="w-20 h-20 mx-auto mb-4"
+            style={{ color: '#3dd9a0', filter: 'drop-shadow(0 8px 24px rgba(61,217,160,0.35))' }}
+          />
           <h1
-            className="text-6xl font-semibold tracking-tight"
+            className="text-5xl font-semibold tracking-tight"
             style={{ color: '#3dd9a0', fontFamily: "'Nunito', 'Inter', sans-serif", letterSpacing: '-0.5px' }}
           >
             Homi

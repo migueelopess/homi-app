@@ -5,7 +5,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#1a5858" />
+    <meta name="theme-color" content="#f8fbf9" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="description" content="Gestão de tarefas domésticas da família" />
@@ -19,12 +19,73 @@
             window.matchMedia('(prefers-color-scheme: dark)').matches);
           if (dark) document.documentElement.classList.add('dark');
           document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', dark ? '#121614' : '#f8fbf9');
         } catch (e) {}
       })();
     </script>
+    <style>
+      /* Splash screen — styled inline so it renders before the JS bundle loads */
+      #splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: #f8fbf9;
+        color: #2e925e;
+        transition: opacity 0.45s ease, visibility 0.45s ease;
+      }
+      html.dark #splash {
+        background: #121614;
+        color: #34b268;
+      }
+      #splash.splash-hide {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+      }
+      #splash svg {
+        width: 92px;
+        height: 92px;
+        animation:
+          splash-pop 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+          splash-breathe 2.4s ease-in-out 0.75s infinite;
+      }
+      #splash .splash-name {
+        margin-top: 14px;
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        font-size: 26px;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        opacity: 0;
+        animation: splash-rise 0.55s ease 0.3s forwards;
+      }
+      @keyframes splash-pop {
+        from { transform: scale(0.4); opacity: 0; }
+        to { transform: scale(1); opacity: 1; }
+      }
+      @keyframes splash-breathe {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.07); }
+      }
+      @keyframes splash-rise {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <!-- Splash — removed by main.jsx once React has mounted -->
+    <div id="splash" aria-hidden="true">
+      <svg viewBox="1036 398 742 742" xmlns="http://www.w3.org/2000/svg">
+        <path fill="currentColor" d="M 1400.35 410.41 C 1403.57 410.312 1406.78 410.289 1410 410.34 C 1492.43 412.182 1529.37 472.639 1584.26 523.712 C 1602.56 539.3 1606.42 566.982 1586.88 583.874 C 1557.2 609.53 1534.69 578.586 1515.34 560.623 C 1495.55 542.249 1467.7 509.123 1445.9 496.119 C 1435.2 489.783 1423.09 486.23 1410.67 485.786 C 1389.32 485.059 1370.16 492.735 1354.78 507.284 C 1338.65 522.544 1323.46 538.197 1307.73 553.813 L 1239.44 620.997 C 1228.93 631.368 1218.15 641.529 1207.67 651.922 C 1175.61 683.718 1141.75 708.518 1141.37 758.096 C 1140.95 811.363 1141.48 864.58 1141.42 917.836 L 1141.34 975.516 C 1141.33 984.522 1140.93 998.862 1142.16 1007.47 C 1143.32 1015.69 1149.58 1028.55 1155.6 1034.52 C 1167.61 1046.44 1179.19 1049.6 1195.62 1049.7 C 1228.57 1049.91 1261.52 1049.76 1294.41 1049.75 L 1487.36 1049.69 L 1585.81 1049.75 C 1599.94 1049.76 1619.57 1051.15 1632.87 1049.25 C 1658.33 1045.6 1674.52 1022.91 1674.49 998.747 C 1674.45 955.657 1673.15 913.281 1673.43 870.701 L 1673.95 791.965 C 1674.02 761.466 1677.54 722.384 1654.03 699.325 C 1651.05 696.404 1645.56 692.344 1641.21 693.236 C 1624.64 696.637 1607.36 718.469 1595.69 730.639 L 1556.18 771.311 L 1418.49 912.187 C 1375.48 956.347 1357.65 927.722 1324.29 893.973 C 1307.18 876.613 1289.97 859.361 1272.64 842.216 C 1261.9 831.489 1251.69 820.447 1251.48 804.341 C 1251.32 794.917 1254.95 785.824 1261.55 779.098 C 1268.63 771.946 1278.28 767.932 1288.35 767.952 C 1294.99 767.95 1301.51 769.767 1307.2 773.206 C 1316.89 779.04 1331.86 795.374 1340.26 803.946 L 1380.59 845.073 L 1513.24 709.167 C 1537.97 683.855 1562.72 656.229 1590.11 633.802 C 1601.1 625.434 1614.14 620.683 1627.54 618.652 C 1699.28 607.773 1740.29 675.251 1748 737.58 C 1750.31 756.172 1749.47 775.607 1749.44 794.403 L 1749.41 878.912 L 1749.45 965.725 C 1749.45 1011.59 1752.44 1037.77 1722.88 1076.86 C 1679.67 1134 1624.59 1125.36 1562.71 1125.23 L 1411.28 1125.19 L 1253.62 1125.26 C 1227.49 1125.29 1197.27 1126.43 1171.49 1124.1 C 1152.48 1122.38 1130.59 1110.94 1115.6 1099.68 C 1092.74 1082.5 1069.17 1042.68 1066.81 1013.98 C 1064.06 980.615 1066.09 941.605 1065.99 907.311 L 1066.15 798.076 C 1066.21 773.897 1064.58 748.614 1068.79 724.783 C 1080.55 658.315 1137.01 617.704 1182.16 572.943 C 1210.62 544.413 1239.24 516.045 1268.03 487.842 C 1312.11 444.337 1334.99 416.718 1400.35 410.41 z"/>
+      </svg>
+      <div class="splash-name">Homi</div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
 import { TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
 import TaskCapture from './TaskCapture';
+import Portal from '@/components/layout/Portal';
 import { toast } from 'sonner';
 
 const DAYS_MAP = {
@@ -392,9 +393,11 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
       {/* Hidden camera input — tap a task, take the photo, done. */}
       <TaskCapture ref={captureRef} person={person} />
 
-      {/* Delegation confirmation dialog */}
+      {/* Delegation confirmation dialog — portaled so the fixed overlay can't be
+          trapped by a transformed ancestor (framer-motion card / page wrapper). */}
       {delegateConfirm && (
-        <div className="fixed inset-0 bg-black/40 z-40 flex items-end" onClick={() => setDelegateConfirm(null)}>
+        <Portal>
+        <div className="fixed inset-0 bg-black/40 z-[60] flex items-end" onClick={() => setDelegateConfirm(null)}>
           <div className="w-full bg-card rounded-t-3xl p-6 pb-24 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-5">
               <span className="text-3xl">{TASK_ICONS[delegateConfirm.taskName] || '✅'}</span>
@@ -431,6 +434,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
             </button>
           </div>
         </div>
+        </Portal>
       )}
     </>
   );

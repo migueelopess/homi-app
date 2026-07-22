@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import Portal from '@/components/layout/Portal';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { TaskService, TaskReminderService, OccasionalTaskService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
@@ -140,10 +140,8 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
 
   const success = phase && phase !== 'saving' ? phase : null;
 
-  // The saving/success screen is rendered through a portal to document.body so
-  // it can never be clipped or mispositioned by a transformed / will-change
-  // ancestor (framer-motion cards, the page-transition wrapper, etc.) — those
-  // create a containing block that would otherwise trap a `fixed` overlay.
+  // Portaled: see the note in components/layout/Portal.jsx — a fixed overlay
+  // rendered inline inside a page gets trapped by transformed ancestors.
   const overlay = (
     <AnimatePresence>
       {phase && (
@@ -199,7 +197,7 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
         onChange={handlePhotoChange}
         className="hidden"
       />
-      {createPortal(overlay, document.body)}
+      <Portal>{overlay}</Portal>
     </>
   );
 });

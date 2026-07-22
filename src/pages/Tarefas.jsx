@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { format, addDays, subDays, isToday } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { PageSkeleton } from '@/components/layout/PageSkeleton';
+import Portal from '@/components/layout/Portal';
 
 const DAYS_MAP_REVERSE = {
   0: 'sunday', 1: 'monday', 2: 'tuesday', 3: 'wednesday',
@@ -447,7 +448,9 @@ export default function Tarefas() {
         );
       })}
 
-      {/* Task detail sheet / send reminder */}
+      {/* Task detail sheet / send reminder — portaled so the fixed overlay
+          isn't trapped by a transformed ancestor. */}
+      <Portal>
       <AnimatePresence>
         {selectedTask && (
           <>
@@ -455,7 +458,7 @@ export default function Tarefas() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/40 z-40"
+              className="fixed inset-0 bg-black/40 z-[60]"
               onClick={() => setSelectedTask(null)}
             />
             <motion.div
@@ -463,7 +466,7 @@ export default function Tarefas() {
               animate={{ y: 0 }}
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="fixed bottom-0 left-0 right-0 z-50 bg-card rounded-t-3xl p-6 pb-12 shadow-2xl max-h-[85vh] overflow-y-auto"
+              className="fixed bottom-0 left-0 right-0 z-[61] bg-card rounded-t-3xl p-6 pb-12 shadow-2xl max-h-[85vh] overflow-y-auto"
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex items-center gap-3">
@@ -629,6 +632,7 @@ export default function Tarefas() {
           </>
         )}
       </AnimatePresence>
+      </Portal>
     </div>
   );
 }

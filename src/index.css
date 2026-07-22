@@ -77,13 +77,19 @@
   }
 }
 
-/* Light fade/slide applied to page content on every route change */
+/* Light fade/slide applied to page content on every route change.
+   fill-mode is `backwards`, never `forwards`/`both`: a forwards fill keeps the
+   animated `transform` applied after the animation ends, and any transform makes
+   the element a containing block that traps `position: fixed` descendants inside
+   its box (breaking every overlay on the page). `backwards` gives the same
+   visual result — it only pre-applies the from-state — and leaves no transform
+   behind once the animation finishes. */
 @keyframes page-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: none; }
 }
 .animate-page-in {
-  animation: page-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: page-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 @layer base {

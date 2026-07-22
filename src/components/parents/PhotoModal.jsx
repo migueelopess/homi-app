@@ -1,8 +1,10 @@
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Portal from '@/components/layout/Portal';
 
 export default function PhotoModal({ url, onClose }) {
   return (
+    <Portal>
     <AnimatePresence>
       {url && (
         <>
@@ -37,5 +39,6 @@ export default function PhotoModal({ url, onClose }) {
         </>
       )}
     </AnimatePresence>
+    </Portal>
   );
 }

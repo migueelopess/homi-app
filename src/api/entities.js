@@ -147,13 +147,15 @@ export const TaskService = {
     return data;
   },
 
-  // Marks the 3 oldest undischarged "not_done" tasks for `person` as having
-  // had the punishment applied. Returns the rows actually updated (usually 3,
-  // could be fewer if the person doesn't have 3 pending failures).
+  // Discharges the oldest undischarged "not_done" tasks for `person` until
+  // 3 failures' worth have been consumed. Rows are weighted: a broken
+  // delegation carries failure_weight 2, so it alone covers two thirds of a
+  // punishment. Returns the rows actually updated (may be fewer than 3 rows,
+  // or none if the person has no pending failures).
   async applyPenalty(person, parentId) {
     const { data: pending, error: selErr } = await supabase
       .from('tasks')
-      .select('id, task_name, date, end_time')
+      .select('id, task_name, date, end_time, failure_weight')
       .eq('person', person)
       .eq('completion_type', 'not_done')
       .is('penalty_applied_at', null)
@@ -170,13 +172,22 @@ export const TaskService = {
       .eq('person', person);
     if (cancelErr) throw cancelErr;
 
-    const eligible = pending
-      .filter(t => !(cancels || []).some(c =>
-        c.task_name === t.task_name &&
-        c.task_date === t.date &&
-        sameTaskSlot(c.end_time, t.end_time)
-      ))
-      .slice(0, 3);
+    const notWaived = pending.filter(t => !(cancels || []).some(c =>
+      c.task_name === t.task_name &&
+      c.task_date === t.date &&
+      sameTaskSlot(c.end_time, t.end_time)
+    ));
+
+    // Take oldest-first until the accumulated weight reaches 3. The row that
+    // crosses the threshold is included whole — we never discharge half a
+    // failure, so a 2-weight row consumed at 2/3 still counts as spent.
+    const eligible = [];
+    let consumed = 0;
+    for (const t of notWaived) {
+      if (consumed >= 3) break;
+      eligible.push(t);
+      consumed += t.failure_weight ?? 1;
+    }
     if (eligible.length === 0) return [];
 
     const ids = eligible.map(t => t.id);

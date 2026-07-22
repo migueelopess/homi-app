@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { TaskService, ScheduledTaskService, OccasionalTaskService, PaymentService, TaskCancellationService } from '@/api/entities';
+import { TaskService, ScheduledTaskService, OccasionalTaskService, PaymentService, TaskCancellationService, TaskDelegationService } from '@/api/entities';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { PEOPLE, getCurrentWeekKey, getWeekTasks, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
 import PersonCard from '@/components/home/PersonCard';
@@ -10,6 +10,7 @@ import TodaySchedule from '@/components/home/TodaySchedule';
 import { useNotifications } from '@/lib/useNotifications';
 import { useMarkMissedTasks } from '@/lib/useMarkMissedTasks';
 import { useMaterializeBonuses } from '@/lib/useMaterializeBonuses';
+import { useMaterializeDelegationChampion } from '@/lib/useMaterializeDelegationChampion';
 import { Calendar } from 'lucide-react';
 import { HomeSkeleton } from '@/components/layout/PageSkeleton';
 
@@ -45,6 +46,11 @@ export default function Home() {
     enabled: !userIsParent && !!person,
   });
 
+  const { data: allDelegations = [] } = useQuery({
+    queryKey: ['taskDelegations'],
+    queryFn: () => TaskDelegationService.list('-created_at'),
+  });
+
   const { data: lastPaidDates = {} } = useQuery({
     queryKey: ['payments', 'last-dates'],
     queryFn: () => PaymentService.getLastPaidDates(),
@@ -63,6 +69,13 @@ export default function Home() {
   });
 
   useMaterializeBonuses({ tasks, enabled: !isLoadingTasks });
+
+  useMaterializeDelegationChampion({
+    tasks,
+    delegations: allDelegations,
+    cancellations,
+    enabled: !isLoadingTasks,
+  });
 
   useNotifications({
     scheduledTasks,

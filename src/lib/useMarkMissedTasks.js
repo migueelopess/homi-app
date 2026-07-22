@@ -1,7 +1,10 @@
 import { useEffect } from 'react';
 import { TaskService, TaskDelegationService, TaskCancellationService, CleanupLogService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
-import { getWeekKey, getCurrentMonthKey, sameTaskSlot, countFailures, applyCancellations, PENALTIES } from './taskHelpers';
+import {
+  getWeekKey, getLocalDateStr, sameTaskSlot, countFailures, applyCancellations,
+  PENALTIES, isDelegationWaived, BROKEN_DELEGATION_WEIGHT,
+} from './taskHelpers';
 
 // Module-level Set — persists across component remounts within the same app session
 const _checkedPersons = new Set();
@@ -118,6 +121,54 @@ export function useMarkMissedTasks({ scheduledTasks, tasks, person, enabled }) {
             }
           }
         }
+      }
+
+      // --- Broken delegations ------------------------------------------
+      // A task taken on from a sibling and then never done. Nobody used to
+      // be penalized for this: the delegator is skipped above (they handed
+      // it off) and the acceptor was never checked, because the scheduled
+      // task still belongs to the delegator. That made "accept, then
+      // abandon" the most profitable move in the app. It now costs a
+      // double failure.
+      const todayStr = getLocalDateStr(today);
+      for (const d of delegations) {
+        if (d.status !== 'accepted' || d.to_person !== person) continue;
+        if (!d.task_date || d.task_date >= todayStr) continue;
+        if (lastCleanup && d.task_date <= lastCleanup) continue;
+        if (isDelegationWaived(d, cancellations)) continue;
+
+        // Any existing row for this slot means it was either delivered or
+        // already marked as missed — nothing to do either way.
+        const alreadyRecorded = tasks.some(
+          t => t.person === person &&
+               t.task_name === d.task_name &&
+               t.date === d.task_date &&
+               sameTaskSlot(t.end_time, d.end_time)
+        );
+        if (alreadyRecorded) continue;
+
+        const brokenDate = new Date(d.task_date + 'T00:00:00');
+        await TaskService.create({
+          person,
+          task_name: d.task_name,
+          completion_type: 'not_done',
+          value: 0,
+          date: d.task_date,
+          end_time: d.end_time ?? null,
+          week_key: getWeekKey(brokenDate),
+          month_key: d.task_date.slice(0, 7),
+          approval_status: 'approved',
+          failure_weight: BROKEN_DELEGATION_WEIGHT,
+        });
+        createdFailures += BROKEN_DELEGATION_WEIGHT;
+
+        sendPushNotification({
+          person: '__parents__',
+          title: '🤝 Delegação não cumprida',
+          body: `${person} aceitou "${d.task_name}" de ${d.from_person} e não fez (vale 2 falhas)`,
+          url: '/pais',
+          tag: `broken-delegation-${d.id}`,
+        });
       }
 
       // Alert parents once when the child crosses the 3-failure penalty

@@ -18,8 +18,29 @@ export const WEEKLY_BONUS = 5.00;
 export const BONUS_TASK_NAME = 'Bónus Semanal';
 export const BONUS_COMPLETION_TYPE = 'bonus';
 
+// ---------------------------------------------------------------
+// Delegations
+// ---------------------------------------------------------------
+
+// Monthly prize for whoever completed the most tasks they took on from a
+// sibling. Sized to match the weekly bonus: worth chasing, without
+// distorting the €1-per-task economy.
+export const DELEGATION_CHAMPION_BONUS = 5.00;
+export const DELEGATION_BONUS_TASK_NAME = 'Campeão das Delegações';
+
+// Breaking a task you accepted from a sibling costs double: you cleared
+// their failure by taking it on, then did not deliver.
+export const BROKEN_DELEGATION_WEIGHT = 2;
+
+// After breaking an accepted delegation, a child cannot take on new ones
+// for this many days — so accepting stays a real commitment.
+export const DELEGATION_COOLDOWN_DAYS = 1;
+
+// Both bonus kinds are stored as task rows and must be excluded wherever
+// we count "real" tasks (weekly bonus eligibility, stats, failures).
 export function isBonusTask(task) {
-  return task?.task_name === BONUS_TASK_NAME;
+  return task?.task_name === BONUS_TASK_NAME
+      || task?.task_name === DELEGATION_BONUS_TASK_NAME;
 }
 
 export const PENALTIES = {
@@ -51,6 +72,7 @@ export const TASK_ICONS = {
   'Arrumar o quarto': '🛏️',
   'Fatura IQA': '🧾',
   'Bónus Semanal': '🏆',
+  'Campeão das Delegações': '🤝',
 };
 
 export const COMMON_TASKS = [
@@ -237,15 +259,121 @@ export function checkWeeklyBonus(tasks, person, weekKey) {
   return personWeekTasks.every(t => t.completion_type !== 'not_done');
 }
 
+// Outstanding failures for a child. Sums `failure_weight` rather than
+// counting rows: a broken delegation is one row worth 2 failures.
 export function countFailures(tasks, person) {
   const today = new Date();
   const thirtyDaysAgo = new Date(today);
   thirtyDaysAgo.setDate(today.getDate() - 30);
 
-  return tasks.filter(t =>
-    t.person === person &&
-    t.completion_type === 'not_done' &&
-    !t.penalty_applied_at &&
-    new Date(t.date + 'T12:00:00') >= thirtyDaysAgo
-  ).length;
+  return tasks.reduce((sum, t) => {
+    if (t.person !== person) return sum;
+    if (t.completion_type !== 'not_done') return sum;
+    if (t.penalty_applied_at) return sum;
+    if (new Date(t.date + 'T12:00:00') < thirtyDaysAgo) return sum;
+    return sum + (t.failure_weight ?? 1);
+  }, 0);
+}
+
+// ---------------------------------------------------------------
+// Delegation scoring
+// ---------------------------------------------------------------
+
+// True once the acceptor actually delivered: a task row exists for them on
+// that exact slot and it wasn't missed or waived. A rejected task is
+// normalized to not_done by TaskService.reject, so rejections correctly
+// flip a delegation back to "broken".
+export function isDelegationFulfilled(delegation, tasks = []) {
+  return tasks.some(t =>
+    t.person === delegation.to_person &&
+    t.task_name === delegation.task_name &&
+    t.date === delegation.task_date &&
+    sameTaskSlot(t.end_time, delegation.end_time) &&
+    t.completion_type !== 'not_done' &&
+    t.completion_type !== 'cancelled'
+  );
+}
+
+// Parents waived this occurrence — it counts against nobody, whether the
+// cancellation was recorded against the delegator or the acceptor.
+export function isDelegationWaived(delegation, cancellations = []) {
+  return cancellations.some(c =>
+    c.task_name === delegation.task_name &&
+    c.task_date === delegation.task_date &&
+    sameTaskSlot(c.end_time, delegation.end_time) &&
+    (c.person === delegation.to_person || c.person === delegation.from_person)
+  );
+}
+
+// Per-person record of delegations taken on from a sibling.
+//   completed — delivered
+//   broken    — deadline passed with nothing to show
+//   open      — accepted, still has time
+/**
+ * @param {any[]} [delegations]
+ * @param {any[]} [tasks]
+ * @param {{ monthKey?: string, cancellations?: any[] }} [options] `monthKey`
+ *   ("YYYY-MM") narrows the window to a single month.
+ */
+export function getDelegationStats(delegations = [], tasks = [], { monthKey, cancellations = [] } = {}) {
+  const today = getLocalDateStr();
+  const stats = {};
+  for (const p of PEOPLE) stats[p] = { accepted: 0, completed: 0, broken: 0, open: 0 };
+
+  for (const d of delegations) {
+    if (d.status !== 'accepted' || !d.to_person) continue;
+    if (!stats[d.to_person]) continue;
+    if (monthKey && !String(d.task_date || '').startsWith(monthKey)) continue;
+    if (isDelegationWaived(d, cancellations)) continue;
+
+    const s = stats[d.to_person];
+    s.accepted++;
+    if (isDelegationFulfilled(d, tasks)) s.completed++;
+    else if (d.task_date < today) s.broken++;
+    else s.open++;
+  }
+  return stats;
+}
+
+// Most completed wins; ties go to whoever broke fewer promises.
+export function rankDelegations(stats) {
+  return PEOPLE
+    .map(person => ({ person, ...stats[person] }))
+    .sort((a, b) =>
+      b.completed - a.completed ||
+      a.broken - b.broken ||
+      a.person.localeCompare(b.person)
+    );
+}
+
+// Everyone tied at the top wins the prize — an exact tie shouldn't mean
+// nobody gets rewarded. Empty when no one completed a single delegation.
+export function getDelegationChampions(stats) {
+  const ranked = rankDelegations(stats);
+  const best = ranked[0];
+  if (!best || best.completed === 0) return [];
+  return ranked.filter(r => r.completed === best.completed && r.broken === best.broken);
+}
+
+// Cooling-off period after breaking an accepted delegation. Blocks the days
+// following the missed one: broken on day D → barred through D + COOLDOWN,
+// free again on D + COOLDOWN + 1.
+export function getAcceptBlock(delegations = [], tasks = [], person, cancellations = []) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = getLocalDateStr();
+  let until = null;
+
+  for (const d of delegations) {
+    if (d.status !== 'accepted' || d.to_person !== person) continue;
+    if (!d.task_date || d.task_date >= todayStr) continue;
+    if (isDelegationWaived(d, cancellations)) continue;
+    if (isDelegationFulfilled(d, tasks)) continue;
+
+    const freeAgain = new Date(d.task_date + 'T00:00:00');
+    freeAgain.setDate(freeAgain.getDate() + DELEGATION_COOLDOWN_DAYS + 1);
+    if (freeAgain > today && (!until || freeAgain > until)) until = freeAgain;
+  }
+
+  return { blocked: !!until, until };
 }

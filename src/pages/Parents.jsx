@@ -132,17 +132,22 @@ export default function Parents() {
 
       const total = (data.deleted_tasks || 0) + (data.deleted_photos || 0) +
         (data.deleted_occasional_tasks || 0) + (data.deleted_reminders || 0) +
-        (data.deleted_notifications || 0);
+        (data.deleted_notifications || 0) + (data.deleted_delegations || 0) +
+        (data.deleted_cancellations || 0) + (data.deleted_extensions || 0);
 
       if (total === 0) {
         toast.warning('Nenhum dado foi apagado. Verifica se a Edge Function foi atualizada no Supabase.');
       } else {
-        // Clear local cache immediately to reflect the cleanup
+        // Clear local cache immediately to reflect the cleanup. Keys must match
+        // the ones the app actually queries under.
         queryClient.resetQueries({ queryKey: ['tasks'] });
-        queryClient.resetQueries({ queryKey: ['occasional-tasks'] });
-        queryClient.resetQueries({ queryKey: ['task-reminders'] });
+        queryClient.resetQueries({ queryKey: ['occasionalTasks'] });
+        queryClient.resetQueries({ queryKey: ['taskReminders'] });
+        queryClient.resetQueries({ queryKey: ['taskDelegations'] });
+        queryClient.resetQueries({ queryKey: ['taskCancellations'] });
+        queryClient.resetQueries({ queryKey: ['taskExtensions'] });
         toast.success(
-          `Limpeza concluída: ${data.deleted_tasks} tarefas, ${data.deleted_photos} fotos, ${data.deleted_occasional_tasks} ocasionais, ${data.deleted_reminders} lembretes apagados`
+          `Limpeza concluída: ${data.deleted_tasks} tarefas, ${data.deleted_photos} fotos, ${data.deleted_occasional_tasks} ocasionais, ${data.deleted_reminders} lembretes, ${data.deleted_delegations} delegações apagados`
         );
       }
     } catch (err) {
@@ -463,7 +468,7 @@ export default function Parents() {
       <Card className="p-4 mt-4 mb-4">
         <h3 className="text-sm font-bold text-foreground mb-2">🧹 Limpeza de Dados</h3>
         <p className="text-xs text-muted-foreground mb-3">
-          Apaga todas as tarefas concluídas, fotos, lembretes e notificações. Rotinas e tarefas agendadas não são afetadas. Penalizações resetam a 0.
+          Apaga tarefas, fotos, lembretes, notificações, delegações, cancelamentos e extensões. Rotinas e tarefas agendadas não são afetadas. Penalizações e ranking de delegações resetam a 0.
         </p>
         <AlertDialog>
           <AlertDialogTrigger asChild>
@@ -476,7 +481,7 @@ export default function Parents() {
             <AlertDialogHeader>
               <AlertDialogTitle>Tens a certeza?</AlertDialogTitle>
               <AlertDialogDescription>
-                Isto vai apagar permanentemente todas as tarefas, fotos, lembretes e notificações. As rotinas e tarefas agendadas não serão afetadas. As penalizações voltam a 0.
+                Isto vai apagar permanentemente todas as tarefas, fotos, lembretes, notificações, delegações, cancelamentos e extensões. As rotinas e tarefas agendadas não serão afetadas. As penalizações e o ranking de delegações voltam a 0.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

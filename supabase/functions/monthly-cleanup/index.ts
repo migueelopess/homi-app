@@ -54,6 +54,9 @@ Deno.serve(async (req) => {
       deleted_occasional_tasks: 0,
       deleted_reminders: 0,
       deleted_notifications: 0,
+      deleted_delegations: 0,
+      deleted_cancellations: 0,
+      deleted_extensions: 0,
     };
 
     // 1. Fetch tasks to delete (to get photo URLs before deleting)
@@ -146,7 +149,46 @@ Deno.serve(async (req) => {
       summary.deleted_notifications = notifCount || 0;
     }
 
-    // 7. Log the cleanup date so all devices know the boundary
+    // 7. Per-occurrence rows keyed by task_date. None of these carry any
+    // meaning into the next month once their tasks are gone — a delegation,
+    // a parent-waived cancellation or a granted extension only ever applied
+    // to a specific day. In manual (clean_all) mode the 9999 cutoff wipes
+    // them all; in monthly mode anything dated before this month goes and
+    // in-flight current/future rows are kept.
+    const { error: deleteDelegErr, count: delegCount } = await supabase
+      .from("task_delegations")
+      .delete({ count: "exact" })
+      .lt("task_date", cutoffDate);
+
+    if (deleteDelegErr) {
+      console.error("Error deleting delegations:", deleteDelegErr);
+    } else {
+      summary.deleted_delegations = delegCount || 0;
+    }
+
+    const { error: deleteCancelErr, count: cancelCount } = await supabase
+      .from("task_cancellations")
+      .delete({ count: "exact" })
+      .lt("task_date", cutoffDate);
+
+    if (deleteCancelErr) {
+      console.error("Error deleting cancellations:", deleteCancelErr);
+    } else {
+      summary.deleted_cancellations = cancelCount || 0;
+    }
+
+    const { error: deleteExtErr, count: extCount } = await supabase
+      .from("task_extensions")
+      .delete({ count: "exact" })
+      .lt("task_date", cutoffDate);
+
+    if (deleteExtErr) {
+      console.error("Error deleting extensions:", deleteExtErr);
+    } else {
+      summary.deleted_extensions = extCount || 0;
+    }
+
+    // 8. Log the cleanup date so all devices know the boundary
     const todayPt = `${year}-${month}-${get("day")}`;
     await supabase.from("cleanup_log").insert({ cleaned_at: todayPt });
 

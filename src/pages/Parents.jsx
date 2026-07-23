@@ -7,7 +7,7 @@ import PhotoModal from '@/components/parents/PhotoModal';
 import ApprovalsTab from '@/components/parents/ApprovalsTab';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { supabase } from '@/api/supabaseClient';
-import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, isAwaitingDecision, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, isAwaitingDecision, isTaskPaid, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -49,9 +49,9 @@ export default function Parents() {
   });
   const pendingCount = pendingTasks.length;
 
-  const { data: lastPaidDates = {} } = useQuery({
-    queryKey: ['payments', 'last-dates'],
-    queryFn: () => PaymentService.getLastPaidDates(),
+  const { data: lastPaidAts = {} } = useQuery({
+    queryKey: ['payments', 'last-at'],
+    queryFn: () => PaymentService.getLastPaidAt(),
     enabled: isParent(user),
   });
 
@@ -96,7 +96,7 @@ export default function Parents() {
       return PaymentService.createBulk(rows);
     },
     onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['payments', 'last-dates'] });
+      queryClient.invalidateQueries({ queryKey: ['payments', 'last-at'] });
       const label = vars.persons.length === 1 ? vars.persons[0] : 'todos os filhos';
       toast.success(`Pagamento registado para ${label}`);
     },
@@ -227,14 +227,13 @@ export default function Parents() {
   };
 
   const PaymentSummary = ({ filteredTasks, period }) => {
-    // Tasks count toward "unpaid" only if approved (or legacy without status) AND dated after the
-    // last paid_through_date for that person. Pending tasks are excluded so parents don't pay for
-    // work that may still be rejected.
+    // A task counts as unpaid only if approved (or legacy without status) AND
+    // submitted after the person's last payment moment. Pending tasks are
+    // excluded so parents don't pay for work that may still be rejected.
     const isUnpaid = (t, person) => {
       if (t.person !== person) return false;
       if (isAwaitingDecision(t)) return false;
-      const lastPaid = lastPaidDates[person];
-      return !lastPaid || t.date > lastPaid;
+      return !isTaskPaid(t, lastPaidAts[person]);
     };
 
     // Period start date — anything strictly before this is "older / previous period"

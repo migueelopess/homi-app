@@ -216,6 +216,17 @@ export function getTaskValue(taskName, completionType) {
   return base;
 }
 
+// A completed task is "paid" once the parent paid the child for work done up
+// to a later moment. The boundary is a timestamp (the payment instant), not a
+// calendar day: a task finished at 19:00 is NOT covered by a payment made at
+// 14:00 the same day, even though both share a date. `lastPaidAt` is the
+// person's most recent payments.paid_at; `task.created_date` is when the task
+// row was inserted (i.e. when the child submitted it).
+export function isTaskPaid(task, lastPaidAt) {
+  if (!lastPaidAt || !task?.created_date) return false;
+  return new Date(task.created_date) <= new Date(lastPaidAt);
+}
+
 // Tasks pending approval don't yet count toward earnings.
 // Rejected tasks were normalized to value=0 by TaskService.reject so they
 // contribute 0 either way, but we still filter to be explicit.

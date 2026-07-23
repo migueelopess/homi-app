@@ -395,16 +395,20 @@ export const PaymentService = {
     return data;
   },
 
-  // Returns { [person]: 'YYYY-MM-DD' } for the latest paid_through_date per person
-  async getLastPaidDates() {
+  // Returns { [person]: 'ISO timestamp' } for the latest payment *moment* per
+  // person. The boundary is when the parent paid (paid_at), not the calendar
+  // day (paid_through_date): otherwise a task completed later the same day as a
+  // payment would be wrongly treated as already paid. ISO strings are lexically
+  // ordered, so a string compare finds the latest correctly.
+  async getLastPaidAt() {
     const { data, error } = await supabase
       .from('payments')
-      .select('person, paid_through_date');
+      .select('person, paid_at');
     if (error) throw error;
     const map = {};
     for (const row of data || []) {
-      if (!map[row.person] || row.paid_through_date > map[row.person]) {
-        map[row.person] = row.paid_through_date;
+      if (row.paid_at && (!map[row.person] || row.paid_at > map[row.person])) {
+        map[row.person] = row.paid_at;
       }
     }
     return map;

@@ -1,10 +1,10 @@
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PERSON_AVATARS, PENALTIES, calculateEarnings, countFailures, getLocalDateStr, getCurrentMonthKey, getCurrentWeekKey, checkWeeklyBonus, isBonusTask, isAwaitingDecision, WEEKLY_BONUS } from '@/lib/taskHelpers';
+import { PERSON_AVATARS, PENALTIES, calculateEarnings, countFailures, getLocalDateStr, getCurrentMonthKey, getCurrentWeekKey, checkWeeklyBonus, isBonusTask, isAwaitingDecision, isTaskPaid, WEEKLY_BONUS } from '@/lib/taskHelpers';
 import { AlertTriangle, Trophy } from 'lucide-react';
 
-export default function PersonCard({ person, tasks, weekTasks, lastPaidDate = null, index }) {
+export default function PersonCard({ person, tasks, weekTasks, lastPaidAt = null, index }) {
   const personTasks = tasks.filter(t => t.person === person);
   const personWeekTasks = weekTasks.filter(t => t.person === person);
   const currentMonth = getCurrentMonthKey();
@@ -12,16 +12,17 @@ export default function PersonCard({ person, tasks, weekTasks, lastPaidDate = nu
   const personMonthTasks = personTasks.filter(t => t.date && t.date.startsWith(currentMonth));
 
   // A task counts toward the displayed balance only if it's not already paid
-  // (date > lastPaidDate) and its reward is decided (not pending/being corrected).
+  // (submitted after the last payment moment) and its reward is decided
+  // (not pending/being corrected).
   const isUnpaid = (t) =>
-    !isAwaitingDecision(t) && (!lastPaidDate || t.date > lastPaidDate);
+    !isAwaitingDecision(t) && !isTaskPaid(t, lastPaidAt);
   const monthEarnings = calculateEarnings(personMonthTasks.filter(isUnpaid));
   const weekEarnings = calculateEarnings(personWeekTasks.filter(isUnpaid));
   const failures = countFailures(tasks, person);
   const todayTasks = personTasks.filter(t => t.date === getLocalDateStr());
 
   // Pending bonus for the current week — only count if not already persisted.
-  // If the week was paid mid-week the bonus will materialize after lastPaidDate
+  // If the week was paid mid-week the bonus will materialize after lastPaidAt
   // and thus still owed, so we include it here regardless of paid state.
   const currentWeekBonusAlreadyPersisted = personWeekTasks.some(t => isBonusTask(t) && t.week_key === currentWeek);
   const pendingBonus = !currentWeekBonusAlreadyPersisted && checkWeeklyBonus(tasks, person, currentWeek)

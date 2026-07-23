@@ -51,9 +51,9 @@ export default function Home() {
     queryFn: () => TaskDelegationService.list('-created_at'),
   });
 
-  const { data: lastPaidDates = {} } = useQuery({
-    queryKey: ['payments', 'last-dates'],
-    queryFn: () => PaymentService.getLastPaidDates(),
+  const { data: lastPaidAts = {} } = useQuery({
+    queryKey: ['payments', 'last-at'],
+    queryFn: () => PaymentService.getLastPaidAt(),
   });
 
   const weekTasks = getWeekTasks(tasks, currentWeek);
@@ -131,7 +131,7 @@ export default function Home() {
             person={person}
             tasks={tasks}
             weekTasks={weekTasks}
-            lastPaidDate={lastPaidDates[person] || null}
+            lastPaidAt={lastPaidAts[person] || null}
             index={i}
           />
         ))}

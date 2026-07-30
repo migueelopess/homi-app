@@ -16,6 +16,13 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const DAY_KEYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
+// Same rule as the frontend's sameTaskSlot: a record with no end_time predates
+// time-slot tracking and matches any occurrence of that task.
+function sameTaskSlot(recordEndTime: string | null, taskEndTime: string | null): boolean {
+  if (recordEndTime === null || recordEndTime === "") return true;
+  return recordEndTime === (taskEndTime ?? "");
+}
+
 async function sendPushToSubscriptions(
   subscriptions: Array<{ id: string; endpoint: string; keys_p256dh: string; keys_auth: string }>,
   payload: string
@@ -121,6 +128,29 @@ Deno.serve(async (req) => {
 
     const acceptedDelegations = todayDelegations || [];
 
+    // 0c. Occurrences the parents waived for today. These must not produce any
+    // reminder at all — the child was explicitly told they don't have to do it.
+    const { data: todayCancellations } = await supabase
+      .from("task_cancellations")
+      .select("person, task_name, end_time")
+      .eq("task_date", todayStr);
+
+    const cancellations = todayCancellations || [];
+
+    // A cancellation is recorded against whoever owned the occurrence, which
+    // may be the delegator or the person who took it on — either way the
+    // occurrence is off.
+    const isCancelled = (
+      taskName: string,
+      endTime: string | null,
+      ...people: Array<string | null>
+    ) => cancellations.some(
+      (c) =>
+        c.task_name === taskName &&
+        people.includes(c.person) &&
+        sameTaskSlot(c.end_time, endTime)
+    );
+
     // 1. Get all scheduled tasks for today's day of week
     const { data: scheduledTasks } = await supabase
       .from("scheduled_tasks")
@@ -134,22 +164,30 @@ Deno.serve(async (req) => {
       .eq("date", todayStr)
       .eq("completed", false);
 
-    // 3. Get today's completed tasks
+    // 3. Get today's recorded tasks. Keyed by time slot as well as name: the
+    // same task can be scheduled twice in a day (e.g. a noon and an evening
+    // "Máquina da louça"), and doing the noon one must not silence the evening
+    // reminder.
     const { data: completedTasks } = await supabase
       .from("tasks")
-      .select("person, task_name, date")
+      .select("person, task_name, date, end_time")
       .eq("date", todayStr);
 
-    const completedSet = new Set(
-      (completedTasks || []).map((t) => `${t.person}:${t.task_name}`)
-    );
+    const recorded = completedTasks || [];
+    const isRecorded = (person: string | null, taskName: string, endTime: string | null) =>
+      recorded.some(
+        (t) =>
+          t.person === person &&
+          t.task_name === taskName &&
+          sameTaskSlot(t.end_time, endTime)
+      );
 
     let totalSent = 0;
 
     // Process scheduled tasks
     for (const task of scheduledTasks || []) {
       if (!task.end_time || !task.person) continue;
-      if (completedSet.has(`${task.person}:${task.task_name}`)) continue;
+      if (isRecorded(task.person, task.task_name, task.end_time)) continue;
 
       // Check if this task was delegated to someone else
       const delegation = acceptedDelegations.find(
@@ -158,7 +196,10 @@ Deno.serve(async (req) => {
       // If delegated and accepted, send reminder to the accepting person instead
       const targetPerson = delegation ? delegation.to_person : task.person;
       // Also skip if the accepting person already completed it
-      if (delegation && completedSet.has(`${targetPerson}:${task.task_name}`)) continue;
+      if (delegation && isRecorded(targetPerson, task.task_name, task.end_time)) continue;
+
+      // Parents waived this occurrence — nobody should be nagged about it.
+      if (isCancelled(task.task_name, task.end_time, task.person, targetPerson)) continue;
 
       const [h, m] = task.end_time.split(":").map(Number);
       const deadlineMinutes = h * 60 + m;
@@ -222,6 +263,9 @@ Deno.serve(async (req) => {
         d => d.task_type === "occasional" && d.occasional_task_id === task.id && d.from_person === task.person
       );
       const targetPerson = delegation ? delegation.to_person : task.person;
+
+      // Parents waived this occurrence — nobody should be nagged about it.
+      if (isCancelled(task.task_name, task.end_time, task.person, targetPerson)) continue;
 
       const [h, m] = task.end_time.split(":").map(Number);
       const deadlineMinutes = h * 60 + m;

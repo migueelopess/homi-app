@@ -89,6 +89,8 @@ export default function Home() {
     todayTasks: todayTasks.filter(t => !userIsParent && t.person === person),
     person: userIsParent ? null : person,
     occasionalTasks: userIsParent ? [] : occasionalTasks,
+    delegations: allDelegations,
+    cancellations,
   });
 
   const isLoading = isLoadingTasks || isLoadingScheduled;

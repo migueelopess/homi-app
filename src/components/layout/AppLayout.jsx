@@ -3,7 +3,7 @@ import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Home, PlusCircle, Trophy, CalendarDays, BarChart2, Bell, ClipboardList, Handshake } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
-import { TaskService, ScheduledTaskService, OccasionalTaskService, TaskDelegationService } from '@/api/entities';
+import { TaskService, ScheduledTaskService, OccasionalTaskService, TaskDelegationService, TaskCancellationService } from '@/api/entities';
 import { PERSON_AVATARS, getLocalDateStr } from '@/lib/taskHelpers';
 import { useQuery } from '@tanstack/react-query';
 import NotificationBell from '@/components/notifications/NotificationBell';
@@ -42,6 +42,12 @@ export default function AppLayout() {
   const { data: delegations = [] } = useQuery({
     queryKey: ['taskDelegations'],
     queryFn: () => TaskDelegationService.list('-created_at'),
+    enabled: !userIsParent && !!person,
+  });
+
+  const { data: cancellations = [] } = useQuery({
+    queryKey: ['taskCancellations', 'all'],
+    queryFn: () => TaskCancellationService.list(),
     enabled: !userIsParent && !!person,
   });
 
@@ -92,6 +98,8 @@ export default function AppLayout() {
                   todayTasks={todayTasks}
                   person={person}
                   occasionalTasks={occasionalTasks}
+                  delegations={delegations}
+                  cancellations={cancellations}
                   pushSupported={pushSupported}
                   pushSubscribed={pushSubscribed}
                   onEnablePush={pushSubscribe}

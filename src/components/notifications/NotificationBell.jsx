@@ -10,6 +10,8 @@ export default function NotificationBell({
   todayTasks,
   person,
   occasionalTasks = [],
+  delegations = [],
+  cancellations = [],
   pushSupported = false,
   pushSubscribed = false,
   onEnablePush,
@@ -17,7 +19,9 @@ export default function NotificationBell({
   const [open, setOpen] = useState(false);
   const [enabling, setEnabling] = useState(false);
 
-  const pending = getPendingTasks(scheduledTasks, todayTasks, person, occasionalTasks);
+  const pending = getPendingTasks(
+    scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations
+  );
 
   const needsPermission = pushSupported && !pushSubscribed;
 

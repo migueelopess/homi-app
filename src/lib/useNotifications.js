@@ -16,7 +16,83 @@ function scheduleNotification(title, body, fireAt) {
   }, delay);
 }
 
-export function useNotifications({ scheduledTasks, todayTasks, person, occasionalTasks = [] }) {
+// Decides which of today's occurrences are still this person's to do.
+//
+// Two things silence an occurrence, and neither used to be considered here —
+// so children were reminded about tasks the parents had waived and about tasks
+// a sibling had already taken over:
+//   * the parents cancelled it for today
+//   * a sibling accepted it as a delegation
+// A delegation that is still `pending` stays on the list on purpose: nobody has
+// taken it on yet, so it remains this person's responsibility (and would be
+// counted as their failure).
+function buildTodayList({ scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations }) {
+  const todayKey = getTodayKey();
+  const today = getLocalDateStr();
+  const todayDelegations = delegations.filter(d => d.task_date === today);
+
+  // A cancellation is recorded against whoever owned the occurrence, so for a
+  // task taken over from a sibling we have to accept a tombstone written
+  // against either of them.
+  const isCancelledFor = (taskName, endTime, people) => cancellations.some(
+    c => c.task_date === today &&
+         c.task_name === taskName &&
+         people.includes(c.person) &&
+         sameTaskSlot(c.end_time, endTime)
+  );
+  const isCancelled = (taskName, endTime) => isCancelledFor(taskName, endTime, [person]);
+
+  const handedOver = todayDelegations.filter(
+    d => d.from_person === person && d.status === 'accepted'
+  );
+
+  const isDone = (taskName, endTime) => todayTasks.some(
+    t => t.task_name === taskName && t.date === today && sameTaskSlot(t.end_time, endTime)
+  );
+
+  const scheduled = scheduledTasks.filter((task) => {
+    if (task.person !== person) return false;
+    if (!task.days_of_week?.includes(todayKey)) return false;
+    if (handedOver.some(d => d.task_type === 'scheduled' && d.scheduled_task_id === task.id)) return false;
+    if (isCancelled(task.task_name, task.end_time)) return false;
+    return !isDone(task.task_name, task.end_time);
+  });
+
+  const occasional = occasionalTasks.filter((task) => {
+    if (task.person !== person) return false;
+    if (task.completed) return false;
+    if (task.date !== today) return false;
+    if (handedOver.some(d => d.task_type === 'occasional' && d.occasional_task_id === task.id)) return false;
+    return !isCancelled(task.task_name, task.end_time);
+  });
+
+  // Tasks a sibling handed to this person and they accepted — theirs now, so
+  // they get the reminders for them.
+  const takenOn = todayDelegations
+    .filter(d => d.to_person === person && d.status === 'accepted')
+    .map((d) => {
+      const original = d.task_type === 'scheduled'
+        ? scheduledTasks.find(t => t.id === d.scheduled_task_id)
+        : occasionalTasks.find(t => t.id === d.occasional_task_id);
+      return { ...d, end_time: d.end_time || original?.end_time || null, _delegated: true };
+    })
+    .filter(d =>
+      d.end_time &&
+      !isCancelledFor(d.task_name, d.end_time, [person, d.from_person]) &&
+      !isDone(d.task_name, d.end_time)
+    );
+
+  return { scheduled, occasional, takenOn };
+}
+
+export function useNotifications({
+  scheduledTasks,
+  todayTasks,
+  person,
+  occasionalTasks = [],
+  delegations = [],
+  cancellations = [],
+}) {
   const timersRef = useRef([]);
 
   useEffect(() => {
@@ -28,73 +104,56 @@ export function useNotifications({ scheduledTasks, todayTasks, person, occasiona
     timersRef.current.forEach(clearTimeout);
     timersRef.current = [];
 
-    const todayKey = getTodayKey();
-    const today = getLocalDateStr();
-
-    // Scheduled tasks notifications
-    const myScheduledTasks = scheduledTasks.filter(
-      (t) => t.person === person && t.days_of_week?.includes(todayKey)
-    );
-
-    myScheduledTasks.forEach((task) => {
-      if (!task.end_time) return;
-      const isDone = todayTasks.some((t) => t.task_name === task.task_name && t.date === today && sameTaskSlot(t.end_time, task.end_time));
-      if (isDone) return;
-
-      const [h, m] = task.end_time.split(':').map(Number);
-
-      const reminderTime = new Date();
-      reminderTime.setHours(h, m - 15, 0, 0);
-      const t1 = scheduleNotification(`⏰ Lembra-te: ${task.task_name}`, `Tens 15 minutos para completar esta tarefa!`, reminderTime.getTime());
-      if (t1) timersRef.current.push(t1);
-
-      const deadlineTime = new Date();
-      deadlineTime.setHours(h, m, 0, 0);
-      const t2 = scheduleNotification(`⚠️ Prazo: ${task.task_name}`, `O prazo para esta tarefa terminou!`, deadlineTime.getTime());
-      if (t2) timersRef.current.push(t2);
+    const { scheduled, occasional, takenOn } = buildTodayList({
+      scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations,
     });
 
-    // Occasional tasks notifications (today's tasks)
-    const myOccasionalToday = occasionalTasks.filter(
-      (t) => t.person === person && t.date === today && !t.completed
-    );
-
-    myOccasionalToday.forEach((task) => {
+    const schedulePair = (task, specialCopy) => {
       if (!task.end_time) return;
       const [h, m] = task.end_time.split(':').map(Number);
 
       const reminderTime = new Date();
       reminderTime.setHours(h, m - 15, 0, 0);
-      const t1 = scheduleNotification(`⏰ Lembra-te: ${task.task_name}`, `Tens 15 minutos para completar esta tarefa especial!`, reminderTime.getTime());
+      const t1 = scheduleNotification(
+        `⏰ Lembra-te: ${task.task_name}`,
+        `Tens 15 minutos para completar esta tarefa${specialCopy ? ' especial' : ''}!`,
+        reminderTime.getTime()
+      );
       if (t1) timersRef.current.push(t1);
 
       const deadlineTime = new Date();
       deadlineTime.setHours(h, m, 0, 0);
-      const t2 = scheduleNotification(`⚠️ Prazo: ${task.task_name}`, `O prazo para esta tarefa especial terminou!`, deadlineTime.getTime());
+      const t2 = scheduleNotification(
+        `⚠️ Prazo: ${task.task_name}`,
+        `O prazo para esta tarefa${specialCopy ? ' especial' : ''} terminou!`,
+        deadlineTime.getTime()
+      );
       if (t2) timersRef.current.push(t2);
-    });
+    };
+
+    scheduled.forEach((task) => schedulePair(task, false));
+    occasional.forEach((task) => schedulePair(task, true));
+    takenOn.forEach((task) => schedulePair(task, task.task_type === 'occasional'));
 
     return () => timersRef.current.forEach(clearTimeout);
-  }, [scheduledTasks, todayTasks, person, occasionalTasks]);
+  }, [scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations]);
 }
 
-export function getPendingTasks(scheduledTasks, todayTasks, person, occasionalTasks = []) {
+export function getPendingTasks(
+  scheduledTasks,
+  todayTasks,
+  person,
+  occasionalTasks = [],
+  delegations = [],
+  cancellations = []
+) {
   if (!person) return [];
-  const todayKey = getTodayKey();
-  const today = getLocalDateStr();
-
-  const pendingScheduled = scheduledTasks.filter((task) => {
-    if (task.person !== person) return false;
-    if (!task.days_of_week?.includes(todayKey)) return false;
-    const isDone = todayTasks.some((t) => t.task_name === task.task_name && t.date === today && sameTaskSlot(t.end_time, task.end_time));
-    return !isDone;
+  const { scheduled, occasional, takenOn } = buildTodayList({
+    scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations,
   });
-
-  const pendingOccasional = occasionalTasks.filter((task) => {
-    if (task.person !== person) return false;
-    if (task.completed) return false;
-    return task.date === today; // only today, not overdue
-  });
-
-  return [...pendingScheduled, ...pendingOccasional.map(t => ({ ...t, _occasional: true }))];
+  return [
+    ...scheduled,
+    ...occasional.map(t => ({ ...t, _occasional: true })),
+    ...takenOn.map(t => ({ ...t, _occasional: t.task_type === 'occasional' })),
+  ];
 }

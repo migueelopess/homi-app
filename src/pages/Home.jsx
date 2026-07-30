@@ -20,12 +20,16 @@ export default function Home() {
   const userIsParent = isParent(user);
   const person = user?.linked_name;
 
-  const { data: rawTasks = [], isLoading: isLoadingTasks } = useQuery({
+  const {
+    data: rawTasks = [],
+    isLoading: isLoadingTasks,
+    isFetchedAfterMount: tasksAreFresh,
+  } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => TaskService.list('-created_date', 500),
   });
 
-  const { data: cancellations = [] } = useQuery({
+  const { data: cancellations = [], isFetchedAfterMount: cancellationsAreFresh } = useQuery({
     queryKey: ['taskCancellations', 'all'],
     queryFn: () => TaskCancellationService.list(),
   });
@@ -46,7 +50,7 @@ export default function Home() {
     enabled: !userIsParent && !!person,
   });
 
-  const { data: allDelegations = [] } = useQuery({
+  const { data: allDelegations = [], isFetchedAfterMount: delegationsAreFresh } = useQuery({
     queryKey: ['taskDelegations'],
     queryFn: () => TaskDelegationService.list('-created_at'),
   });
@@ -61,20 +65,23 @@ export default function Home() {
   const today = getLocalDateStr();
   const todayTasks = tasks.filter(t => t.date === today);
 
+  // No cached data is passed in on purpose — the hook reads its own
+  // authoritative snapshot from the DB before deciding anything.
   useMarkMissedTasks({
-    scheduledTasks,
-    tasks: rawTasks,
     person: userIsParent ? null : person,
-    enabled: !userIsParent && !!person && !isLoadingTasks && !isLoadingScheduled && scheduledTasks.length > 0,
+    enabled: !userIsParent && !!person,
   });
 
-  useMaterializeBonuses({ tasks, enabled: !isLoadingTasks });
+  // These two write bonus rows (and delete ones that are no longer deserved),
+  // so they must never run off a restored cache — `isFetchedAfterMount` means
+  // the data actually came from the network during this mount.
+  useMaterializeBonuses({ tasks, enabled: tasksAreFresh && cancellationsAreFresh });
 
   useMaterializeDelegationChampion({
     tasks,
     delegations: allDelegations,
     cancellations,
-    enabled: !isLoadingTasks,
+    enabled: tasksAreFresh && cancellationsAreFresh && delegationsAreFresh,
   });
 
   useNotifications({

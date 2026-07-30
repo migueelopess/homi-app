@@ -31,6 +31,20 @@ export const TaskService = {
     if (error) throw error;
   },
 
+  // Authoritative read straight from the DB for a date window, bypassing any
+  // client cache. Used before writing derived rows (e.g. marking a scheduled
+  // task as missed): deciding that from a cached list is unsafe, because a
+  // stale cache makes work that was already done look like it never happened.
+  async listByDateRange(fromDate, toDate) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('id, person, task_name, date, end_time, completion_type, approval_status, penalty_applied_at, failure_weight')
+      .gte('date', fromDate)
+      .lte('date', toDate);
+    if (error) throw error;
+    return data ?? [];
+  },
+
   async listPending() {
     const { data, error } = await supabase
       .from('tasks')

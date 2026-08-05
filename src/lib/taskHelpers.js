@@ -207,13 +207,38 @@ export const FIXED_TASK_VALUES = {
   'Fatura IQA': 0.50,
 };
 
-export function getTaskValue(taskName, completionType) {
-  if (SIDNEY_TASKS.includes(taskName)) return 0;
+/**
+ * What a completed task is worth.
+ *
+ * Looking after Sidney is expected of the family for free, so those chores
+ * normally earn €0 — but a sibling who takes one on as a delegation is paid
+ * for it on the standard scale (€1.00 on time, halved after a reminder,
+ * quartered if late). Doing someone else's dog duty is a favour, and the pay
+ * is what makes it worth accepting.
+ *
+ * @param {string} taskName
+ * @param {string} completionType
+ * @param {{ delegated?: boolean }} [options] `delegated` = this person took the
+ *   task on from a sibling, rather than it being their own chore.
+ */
+export function getTaskValue(taskName, completionType, { delegated = false } = {}) {
+  if (!delegated && SIDNEY_TASKS.includes(taskName)) return 0;
   const base = COMPLETION_TYPES[completionType]?.value ?? 0;
   // Only override positive (earning) completions — a missed/rejected fixed-value
   // task must still be worth 0.
   if (base > 0 && taskName in FIXED_TASK_VALUES) return FIXED_TASK_VALUES[taskName];
   return base;
+}
+
+// Headline reward shown when offering/accepting a delegation: what the task
+// pays if the helper does it on time. An occasional task carries its own
+// explicit reward; everything else follows the standard scale, including
+// Sidney chores, which only pay once delegated.
+export function getDelegationReward(delegation) {
+  if (delegation?.task_type === 'occasional' && delegation.reward != null) {
+    return Number(delegation.reward);
+  }
+  return getTaskValue(delegation?.task_name, 'on_time_no_reminder', { delegated: true });
 }
 
 // A completed task is "paid" once the parent paid the child for work done up

@@ -4,7 +4,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { TaskService, TaskReminderService, OccasionalTaskService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { uploadTaskPhoto } from '@/api/storage';
-import { COMPLETION_TYPES, SIDNEY_TASKS, getTaskValue, getWeekKey, getCurrentMonthKey, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
+import { COMPLETION_TYPES, getTaskValue, getWeekKey, getCurrentMonthKey, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -18,11 +18,11 @@ function isWithinTimeWindow(endTime) {
   return now <= end;
 }
 
-// Value of a completed task: Sidney tasks earn €0; occasional tasks carry a
-// custom reward (halved with a reminder, quartered when late); everything else
-// uses the standard scale (with fixed-value overrides like Fatura IQA).
+// Value of a completed task. An occasional task carries its own explicit
+// reward (halved with a reminder, quartered when late) and that always wins;
+// everything else follows the standard scale, which is also where Sidney
+// chores get paid €0 unless this person took the task on from a sibling.
 function taskValue(task, completionType) {
-  if (SIDNEY_TASKS.includes(task.task_name)) return 0;
   const isOccasional = task._occasional || task._type === 'occasional';
   const reward = isOccasional && task.reward != null ? Number(task.reward) : null;
   if (reward != null) {
@@ -31,7 +31,7 @@ function taskValue(task, completionType) {
     if (completionType === 'late') return Math.round(reward * 25) / 100;
     return 0;
   }
-  return getTaskValue(task.task_name, completionType);
+  return getTaskValue(task.task_name, completionType, { delegated: !!task._delegated });
 }
 
 // One-tap task completion: `capture(task)` opens the OS camera straight from

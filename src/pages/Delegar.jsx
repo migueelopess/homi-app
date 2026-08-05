@@ -4,8 +4,8 @@ import { TaskDelegationService, TaskService, TaskCancellationService } from '@/a
 import { sendPushNotification } from '@/api/supabaseClient';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import {
-  PERSON_AVATARS, TASK_ICONS, getLocalDateStr, getCurrentMonthKey,
-  getDelegationStats, rankDelegations, getAcceptBlock,
+  PERSON_AVATARS, TASK_ICONS, SIDNEY_TASKS, getLocalDateStr, getCurrentMonthKey,
+  getDelegationStats, rankDelegations, getAcceptBlock, getDelegationReward,
   DELEGATION_CHAMPION_BONUS, BROKEN_DELEGATION_WEIGHT,
 } from '@/lib/taskHelpers';
 import { Lock, Handshake, Clock, Inbox, Send, CheckCircle2, Trophy, ShieldAlert, AlertTriangle } from 'lucide-react';
@@ -238,8 +238,11 @@ export default function Delegar() {
                             <span className="text-[11px] text-muted-foreground">Até às {d.end_time}</span>
                           </div>
                         )}
-                        {d.task_type === 'occasional' && d.reward > 0 && (
-                          <span className="text-[11px] text-primary font-medium">+€{Number(d.reward).toFixed(2)}</span>
+                        {getDelegationReward(d) > 0 && (
+                          <span className="text-[11px] text-primary font-semibold">
+                            +€{getDelegationReward(d).toFixed(2)}
+                            {SIDNEY_TASKS.includes(d.task_name) && ' 🐶'}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -373,6 +376,18 @@ export default function Delegar() {
                 Ficas responsável por esta tarefa do {PERSON_AVATARS[confirmAccept.from_person]}{' '}
                 <strong className="text-foreground">{confirmAccept.from_person}</strong> — e a recompensa passa a ser tua.
               </p>
+
+              {getDelegationReward(confirmAccept) > 0 && (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/10 border border-primary/30 mb-2">
+                  <span className="text-lg">💰</span>
+                  <p className="text-sm text-foreground leading-snug">
+                    Ganhas <strong className="text-primary">€{getDelegationReward(confirmAccept).toFixed(2)}</strong> se a fizeres a tempo.
+                    {SIDNEY_TASKS.includes(confirmAccept.task_name) && (
+                      <span className="text-muted-foreground"> As tarefas do Sidney só pagam quando ajudas um irmão 🐶</span>
+                    )}
+                  </p>
+                </div>
+              )}
 
               <div className="flex items-start gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/30 mb-2">
                 <AlertTriangle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />

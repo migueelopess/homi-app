@@ -108,9 +108,23 @@ export function useNotifications({
       scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations,
     });
 
-    const schedulePair = (task, specialCopy) => {
+    const schedulePair = (task, specialCopy, delegatedFrom = null) => {
       if (!task.end_time) return;
       const [h, m] = task.end_time.split(':').map(Number);
+
+      // A task taken on from a sibling gets an earlier heads-up: it is not
+      // part of this child's own routine, so it is the easiest to forget —
+      // and dropping it costs them double failures.
+      if (delegatedFrom) {
+        const earlyTime = new Date();
+        earlyTime.setHours(h, m - 30, 0, 0);
+        const t0 = scheduleNotification(
+          `🤝 Aceitaste: ${task.task_name}`,
+          `Faltam 30 minutos — ficaste de fazer esta tarefa do ${delegatedFrom}.`,
+          earlyTime.getTime()
+        );
+        if (t0) timersRef.current.push(t0);
+      }
 
       const reminderTime = new Date();
       reminderTime.setHours(h, m - 15, 0, 0);
@@ -133,7 +147,7 @@ export function useNotifications({
 
     scheduled.forEach((task) => schedulePair(task, false));
     occasional.forEach((task) => schedulePair(task, true));
-    takenOn.forEach((task) => schedulePair(task, task.task_type === 'occasional'));
+    takenOn.forEach((task) => schedulePair(task, task.task_type === 'occasional', task.from_person));
 
     return () => timersRef.current.forEach(clearTimeout);
   }, [scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations]);

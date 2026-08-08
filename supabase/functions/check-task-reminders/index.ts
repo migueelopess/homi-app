@@ -205,6 +205,32 @@ Deno.serve(async (req) => {
       const deadlineMinutes = h * 60 + m;
       const minutesUntilDeadline = deadlineMinutes - currentTotalMinutes;
 
+      // A task taken on from a sibling gets an earlier nudge: it is not part
+      // of this child's own routine, so it is the one most easily forgotten —
+      // and dropping it costs them double failures.
+      if (delegation && minutesUntilDeadline >= 25 && minutesUntilDeadline <= 30) {
+        const key = `delegation:${delegation.id}:${todayStr}:reminder30`;
+        if (await markAsSent(key)) {
+          const { data: subs } = await supabase
+            .from("push_subscriptions")
+            .select("*")
+            .eq("person", targetPerson);
+
+          if (subs && subs.length > 0) {
+            const result = await sendPushToSubscriptions(
+              subs,
+              JSON.stringify({
+                title: `🤝 Aceitaste: ${task.task_name}`,
+                body: `Faltam 30 minutos — ficaste de fazer esta tarefa do ${task.person}.`,
+                url: "/",
+                tag: `deleg-reminder30-${delegation.id}`,
+              })
+            );
+            totalSent += result.sent;
+          }
+        }
+      }
+
       // 15 minutes before reminder (window: 10-15 min before)
       if (minutesUntilDeadline >= 10 && minutesUntilDeadline <= 15) {
         const key = `scheduled:${task.id}:${todayStr}:reminder`;
@@ -270,6 +296,31 @@ Deno.serve(async (req) => {
       const [h, m] = task.end_time.split(":").map(Number);
       const deadlineMinutes = h * 60 + m;
       const minutesUntilDeadline = deadlineMinutes - currentTotalMinutes;
+
+      // Earlier nudge for a task taken on from a sibling (see the scheduled
+      // loop above for why).
+      if (delegation && minutesUntilDeadline >= 25 && minutesUntilDeadline <= 30) {
+        const key = `delegation:${delegation.id}:${todayStr}:reminder30`;
+        if (await markAsSent(key)) {
+          const { data: subs } = await supabase
+            .from("push_subscriptions")
+            .select("*")
+            .eq("person", targetPerson);
+
+          if (subs && subs.length > 0) {
+            const result = await sendPushToSubscriptions(
+              subs,
+              JSON.stringify({
+                title: `🤝 Aceitaste: ${task.task_name}`,
+                body: `Faltam 30 minutos — ficaste de fazer esta tarefa do ${task.person}.`,
+                url: "/",
+                tag: `deleg-reminder30-${delegation.id}`,
+              })
+            );
+            totalSent += result.sent;
+          }
+        }
+      }
 
       // 15 minutes before
       if (minutesUntilDeadline >= 10 && minutesUntilDeadline <= 15) {

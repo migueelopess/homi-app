@@ -1,14 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 
 const THRESHOLD = 68;   // pull past this to trigger
 const MAX_PULL = 104;   // rubber-band stops here
 const RESISTANCE = 0.5; // finger travel → pull distance
 
-// Pull down from the top of the page to refresh, like a native app.
+// Pull down from the top to refresh, like a native app: the page follows the
+// finger, and while it refreshes the content blurs behind a centred spinner.
 //
-// Only the indicator moves — the page content stays put, so nothing reflows
-// and the gesture can be abandoned at any point with no visual cost.
+// Note on `transform`/`filter`: both make an element a containing block, which
+// traps `position: fixed` descendants inside its box. Every overlay in the app
+// is portaled to <body> so it escapes this wrapper — and when idle we set them
+// back to `none` rather than `translateY(0)`, because an identity transform
+// still creates the containing block.
 export default function PullToRefresh({ onRefresh, children }) {
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
@@ -71,7 +75,7 @@ export default function PullToRefresh({ onRefresh, children }) {
 
       refreshingRef.current = true;
       setRefreshing(true);
-      setPullDistance(THRESHOLD); // park the spinner at the trigger point
+      setPullDistance(THRESHOLD); // hold the page open while it loads
       try {
         await onRefresh?.();
       } finally {
@@ -98,33 +102,59 @@ export default function PullToRefresh({ onRefresh, children }) {
 
   const progress = Math.min(1, pull / THRESHOLD);
   const armed = progress >= 1;
-  const visible = pull > 0 || refreshing;
+  const settling = pull === 0 || refreshing;
 
   return (
     <>
+      {/* Arrow that trails the finger, handing over to the centred spinner */}
       <div
-        aria-hidden={!visible}
+        aria-hidden="true"
         className="fixed inset-x-0 z-40 flex justify-center pointer-events-none"
         style={{
-          top: `calc(3.5rem + env(safe-area-inset-top))`,
-          transform: `translateY(${pull > 0 ? pull - 44 : -44}px)`,
-          opacity: visible ? 1 : 0,
-          transition: refreshing || pull === 0 ? 'transform 0.25s ease, opacity 0.25s ease' : 'none',
+          top: 'calc(3.5rem + env(safe-area-inset-top))',
+          transform: pull > 0 ? `translateY(${pull - 46}px)` : 'translateY(-46px)',
+          opacity: pull > 0 && !refreshing ? 1 : 0,
+          transition: settling ? 'transform 0.3s cubic-bezier(0.22,1,0.36,1), opacity 0.2s ease' : 'opacity 0.2s ease',
         }}
       >
-        <div
-          className="w-10 h-10 rounded-full flex items-center justify-center
-                     bg-card/80 backdrop-blur-xl backdrop-saturate-150
-                     border border-white/25 dark:border-white/10
-                     shadow-[0_4px_16px_rgba(0,0,0,0.18)]"
-        >
+        <div className="w-10 h-10 rounded-full flex items-center justify-center
+                        bg-card/80 backdrop-blur-xl backdrop-saturate-150
+                        border border-white/25 dark:border-white/10
+                        shadow-[0_4px_16px_rgba(0,0,0,0.18)]">
           <RefreshCw
-            className={`w-[18px] h-[18px] transition-colors ${armed || refreshing ? 'text-primary' : 'text-muted-foreground'} ${refreshing ? 'animate-spin' : ''}`}
-            style={refreshing ? undefined : { transform: `rotate(${progress * 270}deg)` }}
+            className={`w-[18px] h-[18px] transition-colors ${armed ? 'text-primary' : 'text-muted-foreground'}`}
+            style={{ transform: `rotate(${progress * 270}deg)` }}
           />
         </div>
       </div>
-      {children}
+
+      {/* The page itself, following the finger */}
+      <div
+        style={{
+          transform: pull > 0 ? `translateY(${pull}px)` : 'none',
+          filter: refreshing ? 'blur(3px)' : 'none',
+          opacity: refreshing ? 0.55 : 1,
+          pointerEvents: refreshing ? 'none' : undefined,
+          transition: settling
+            ? 'transform 0.3s cubic-bezier(0.22,1,0.36,1), filter 0.25s ease, opacity 0.25s ease'
+            : 'filter 0.25s ease, opacity 0.25s ease',
+        }}
+      >
+        {children}
+      </div>
+
+      {/* Sibling of the blurred wrapper, so it stays sharp */}
+      {refreshing && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center pointer-events-none">
+          <div className="flex flex-col items-center gap-2.5 px-5 py-4 rounded-3xl
+                          bg-card/85 backdrop-blur-2xl backdrop-saturate-150
+                          border border-white/25 dark:border-white/10
+                          shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
+            <Loader2 className="w-7 h-7 text-primary animate-spin" />
+            <span className="text-xs font-semibold text-foreground">A atualizar...</span>
+          </div>
+        </div>
+      )}
     </>
   );
 }

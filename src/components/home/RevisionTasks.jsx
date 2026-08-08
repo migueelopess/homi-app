@@ -14,6 +14,7 @@ export default function RevisionTasks({ tasks = [], person }) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef(null);
   const pendingIdRef = useRef(null);
+  const lastAttemptRef = useRef(null);
 
   const resubmitMutation = useMutation({
     mutationFn: async ({ id, file, task_name }) => {
@@ -29,11 +30,24 @@ export default function RevisionTasks({ tasks = [], person }) {
       return id;
     },
     onSuccess: () => {
+      lastAttemptRef.current = null;
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       queryClient.invalidateQueries({ queryKey: ['pendingTasks'] });
       toast.success('Corrigida — à espera de aprovação 📸');
     },
-    onError: () => toast.error('Não foi possível reenviar. Tenta de novo.'),
+    onError: (err) => {
+      // Keep the photo and offer a retry right there: the alternative is the
+      // child walking back to re-photograph something they already did.
+      toast.error(err?.message || 'Não foi possível reenviar.', {
+        duration: Infinity,
+        action: lastAttemptRef.current
+          ? {
+              label: 'Tentar novamente',
+              onClick: () => resubmitMutation.mutate(lastAttemptRef.current),
+            }
+          : undefined,
+      });
+    },
   });
 
   const startCapture = (task) => {
@@ -47,7 +61,8 @@ export default function RevisionTasks({ tasks = [], person }) {
     const task = pendingIdRef.current;
     pendingIdRef.current = null;
     if (!file || !task) return;
-    resubmitMutation.mutate({ id: task.id, file, task_name: task.task_name });
+    lastAttemptRef.current = { id: task.id, file, task_name: task.task_name };
+    resubmitMutation.mutate(lastAttemptRef.current);
   };
 
   if (tasks.length === 0) return null;

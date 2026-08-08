@@ -21,8 +21,10 @@ export default function RegisterTask() {
   const [taskName, setTaskName] = useState('');
   const [customTask, setCustomTask] = useState('');
   const [success, setSuccess] = useState(null); // { name, completion_type } after a successful register
+  const [stage, setStage] = useState(null); // upload progress, for slow links
   const fileInputRef = useRef(null);
   const pendingNameRef = useRef(''); // task name awaiting the camera photo
+  const lastAttemptRef = useRef(null); // kept so a retry reuses the same photo
 
   const today = getLocalDateStr();
 
@@ -39,7 +41,7 @@ export default function RegisterTask() {
 
   const createMutation = useMutation({
     mutationFn: async ({ name, file }) => {
-      const photo_url = await uploadTaskPhoto(file);
+      const photo_url = await uploadTaskPhoto(file, setStage);
       // Auto-derive completion type: these ad-hoc tasks have no time window, so
       // they're always "on time" — reduced only if a parent nagged about it today.
       const hasReminder = reminders.some(r => r.task_name === name);
@@ -70,16 +72,28 @@ export default function RegisterTask() {
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      lastAttemptRef.current = null;
+      setStage(null);
       setTaskName('');
       setCustomTask('');
       pendingNameRef.current = '';
       setSuccess(result);
       setTimeout(() => setSuccess(null), 2500);
     },
-    onError: () => {
+    onError: (err) => {
       pendingNameRef.current = '';
       setTaskName('');
-      toast.error('Não foi possível registar a tarefa. Tenta de novo.');
+      setStage(null);
+      // The photo is kept so retrying does not mean photographing it again.
+      toast.error(err?.message || 'Não foi possível registar a tarefa.', {
+        duration: Infinity,
+        action: lastAttemptRef.current
+          ? {
+              label: 'Tentar novamente',
+              onClick: () => createMutation.mutate(lastAttemptRef.current),
+            }
+          : undefined,
+      });
     },
   });
 
@@ -108,7 +122,8 @@ export default function RegisterTask() {
       setTaskName('');
       return;
     }
-    createMutation.mutate({ name, file });
+    lastAttemptRef.current = { name, file };
+    createMutation.mutate(lastAttemptRef.current);
   };
 
   if (loadingUser) {
@@ -193,7 +208,13 @@ export default function RegisterTask() {
             className="flex flex-col items-center justify-center py-20"
           >
             <Loader2 className="w-10 h-10 text-primary animate-spin mb-4" />
-            <p className="text-sm text-muted-foreground">A registar a tarefa...</p>
+            <p className="text-sm text-muted-foreground">
+              {stage?.phase === 'compressing'
+                ? 'A preparar a foto...'
+                : stage && stage.attempt > 1
+                  ? `Ligação fraca — a tentar de novo (${stage.attempt}/${stage.attempts})`
+                  : 'A registar a tarefa...'}
+            </p>
           </motion.div>
         ) : (
           <motion.div key="form" className="space-y-5">

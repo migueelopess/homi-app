@@ -97,6 +97,13 @@
     @apply border-border outline-ring/50;
   }
 
+  /* The app implements its own pull-to-refresh, so stop the browser's native
+     one from firing at the same time (and stop scroll chaining to the page
+     behind bottom sheets). */
+  html, body {
+    overscroll-behavior-y: contain;
+  }
+
   body {
     @apply bg-background text-foreground font-inter;
   }

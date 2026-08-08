@@ -9,6 +9,8 @@ import { useQuery } from '@tanstack/react-query';
 import NotificationBell from '@/components/notifications/NotificationBell';
 import HomiMark from '@/components/layout/HomiMark';
 import { PageSkeleton } from '@/components/layout/PageSkeleton';
+import PullToRefresh from '@/components/layout/PullToRefresh';
+import { useFullRefresh } from '@/lib/useFullRefresh';
 import { usePushSubscription } from '@/lib/usePushSubscription';
 
 export default function AppLayout() {
@@ -17,6 +19,7 @@ export default function AppLayout() {
   const userIsParent = isParent(user);
   const person = user?.linked_name;
   const { pushSupported, pushSubscribed, subscribe: pushSubscribe } = usePushSubscription(user);
+  const fullRefresh = useFullRefresh();
 
   const { data: scheduledTasks = [] } = useQuery({
     queryKey: ['scheduledTasks'],
@@ -122,13 +125,15 @@ export default function AppLayout() {
       {/* Suspense lives INSIDE the layout so the header and the bottom nav
           stay mounted and tappable while a lazy page chunk loads. The keyed
           wrapper replays a light fade/slide on every route change. */}
-      <div className="flex-1 pb-28">
-        <Suspense fallback={<PageSkeleton />}>
-          <div key={location.pathname} className="animate-page-in">
-            <Outlet />
-          </div>
-        </Suspense>
-      </div>
+      <PullToRefresh onRefresh={fullRefresh}>
+        <div className="flex-1 pb-28">
+          <Suspense fallback={<PageSkeleton />}>
+            <div key={location.pathname} className="animate-page-in">
+              <Outlet />
+            </div>
+          </Suspense>
+        </div>
+      </PullToRefresh>
 
       {/* Bottom Navigation — floating glass pill with a sliding active indicator */}
       <nav className="fixed bottom-0 inset-x-0 z-50 pointer-events-none">

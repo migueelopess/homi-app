@@ -448,6 +448,32 @@ export const PaymentService = {
   },
 };
 
+// Remembers, per child, the last day the missed-task detector has already
+// covered. Without it the detector used a fixed lookback, so a child who
+// stayed out of the app long enough had the older days fall out of range and
+// never be checked — absence became the cheapest way to dodge penalties.
+export const MissedCheckService = {
+  async getCheckedThrough(person) {
+    const { data, error } = await supabase
+      .from('missed_check_log')
+      .select('checked_through')
+      .eq('person', person)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.checked_through ?? null;
+  },
+
+  async setCheckedThrough(person, date) {
+    const { error } = await supabase
+      .from('missed_check_log')
+      .upsert(
+        { person, checked_through: date, updated_at: new Date().toISOString() },
+        { onConflict: 'person' }
+      );
+    if (error) throw error;
+  },
+};
+
 export const CleanupLogService = {
   async getLastCleanupDate() {
     const { data, error } = await supabase

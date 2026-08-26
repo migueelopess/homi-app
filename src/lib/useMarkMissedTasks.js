@@ -1,5 +1,8 @@
 import { useEffect } from 'react';
-import { TaskService, ScheduledTaskService, TaskDelegationService, TaskCancellationService, CleanupLogService } from '@/api/entities';
+import {
+  TaskService, ScheduledTaskService, TaskDelegationService,
+  TaskCancellationService, CleanupLogService, MissedCheckService,
+} from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
 import {
   getWeekKey, getLocalDateStr, sameTaskSlot, countFailures, applyCancellations,
@@ -9,18 +12,28 @@ import {
 // Module-level Set — persists across component remounts within the same app session
 const _checkedPersons = new Set();
 
-const LOOKBACK_DAYS = 7;
+// Used only for a child with no checkpoint yet (a new person, or a wiped log).
+const DEFAULT_LOOKBACK_DAYS = 7;
+// Ceiling on a single catch-up, so a long-dormant account cannot fire off
+// hundreds of writes on one app open. Anything older is left alone.
+const MAX_CATCHUP_DAYS = 60;
 // countFailures works over a 30-day window, so the snapshot must cover it too —
 // otherwise the "3 failures" alert fires off an undercount.
 const FAILURE_WINDOW_DAYS = 30;
 
-// Checks the last 7 days for scheduled tasks that were never done and registers them as 'not_done'.
+// Registers scheduled tasks that were never done as 'not_done'.
 //
-// Every decision here is made against data read straight from the DB, never
-// against the React Query cache. Marking a task as missed is destructive
-// (it costs the child money and counts toward a punishment), and the cached
-// list can be minutes or hours out of date — reading it made completed work
-// look undone and produced duplicate failures for the same slot.
+// Scanning is driven by a per-child checkpoint (missed_check_log), not a fixed
+// window. With a fixed lookback, a child who stayed out of the app for longer
+// than the window had the older days silently fall out of range and never be
+// checked — so staying away was the cheapest way to dodge penalties. Resuming
+// where the last run stopped means a gap of any length is caught up exactly
+// once, and the checkpoint only moves after a run that actually succeeded.
+//
+// Every decision is made against data read straight from the DB, never against
+// the React Query cache. Marking a task as missed is destructive (it costs the
+// child money and counts toward a punishment), and a stale cache made completed
+// work look undone.
 export function useMarkMissedTasks({ person, enabled }) {
   useEffect(() => {
     if (!enabled || !person) return;
@@ -33,9 +46,38 @@ export function useMarkMissedTasks({ person, enabled }) {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const oldest = new Date(today);
-      oldest.setDate(today.getDate() - FAILURE_WINDOW_DAYS);
-      const oldestStr = getLocalDateStr(oldest);
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      const yesterdayStr = getLocalDateStr(yesterday);
+
+      // Where to resume from. A missing checkpoint (new child) falls back to
+      // the old fixed lookback rather than the beginning of time.
+      let checkedThrough = null;
+      try {
+        checkedThrough = await MissedCheckService.getCheckedThrough(person);
+      } catch (e) {
+        console.error('markMissedTasks: could not read checkpoint', e);
+      }
+
+      let scanStart;
+      if (checkedThrough) {
+        scanStart = new Date(`${checkedThrough}T00:00:00`);
+        scanStart.setDate(scanStart.getDate() + 1);
+      } else {
+        scanStart = new Date(today);
+        scanStart.setDate(today.getDate() - DEFAULT_LOOKBACK_DAYS);
+      }
+
+      const earliestAllowed = new Date(today);
+      earliestAllowed.setDate(today.getDate() - MAX_CATCHUP_DAYS);
+      if (scanStart < earliestAllowed) scanStart = earliestAllowed;
+
+      // The snapshot must cover both what we are about to scan and the 30 days
+      // the failure count is based on, whichever reaches further back.
+      const failureWindowStart = new Date(today);
+      failureWindowStart.setDate(today.getDate() - FAILURE_WINDOW_DAYS);
+      const snapshotFrom = scanStart < failureWindowStart ? scanStart : failureWindowStart;
+      const snapshotFromStr = getLocalDateStr(snapshotFrom);
 
       // Authoritative snapshot of the decision window. If this fails we must
       // not proceed: assuming "no rows" would mark everything as missed.
@@ -43,7 +85,7 @@ export function useMarkMissedTasks({ person, enabled }) {
       let scheduled;
       try {
         [windowTasks, scheduled] = await Promise.all([
-          TaskService.listByDateRange(oldestStr, getLocalDateStr(today)),
+          TaskService.listByDateRange(snapshotFromStr, getLocalDateStr(today)),
           ScheduledTaskService.list(),
         ]);
       } catch (e) {
@@ -89,10 +131,11 @@ export function useMarkMissedTasks({ person, enabled }) {
         t => t.task_name === taskName && t.date === dateStr && sameTaskSlot(t.end_time, endTime)
       );
 
-      for (let daysBack = 1; daysBack <= LOOKBACK_DAYS; daysBack++) {
-        const date = new Date(today);
-        date.setDate(today.getDate() - daysBack);
-        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+      const cursor = new Date(scanStart);
+      while (cursor <= yesterday) {
+        const date = new Date(cursor);
+        cursor.setDate(cursor.getDate() + 1);
+        const dateStr = getLocalDateStr(date);
 
         // Skip days that fall before or on the last cleanup date
         if (lastCleanup && dateStr <= lastCleanup) continue;
@@ -153,14 +196,14 @@ export function useMarkMissedTasks({ person, enabled }) {
             });
             createdFailures++;
 
-            // Notify parents about missed task (only for yesterday)
-            if (daysBack === 1) {
-              const [y, mo, d] = dateStr.split('-');
-              const dateLabel = daysBack === 1 ? 'ontem' : `${d}-${mo}-${y}`;
+            // Only for yesterday: a catch-up over a long absence would
+            // otherwise fire off dozens of notifications at once.
+            if (dateStr === yesterdayStr) {
               sendPushNotification({
                 person: '__parents__',
                 title: `❌ Tarefa não feita`,
-                body: `${person} não completou: ${scheduledTask.task_name} (${dateLabel})`,
+                body: `${person} não completou: ${scheduledTask.task_name} (ontem)`,
+                url: '/pais',
                 tag: `missed-${person}-${scheduledTask.task_name}-${scheduledTask.end_time || ''}-${dateStr}`,
               });
             }
@@ -181,7 +224,7 @@ export function useMarkMissedTasks({ person, enabled }) {
         if (!d.task_date || d.task_date >= todayStr) continue;
         // Outside the snapshot we can't tell whether it was delivered, so we
         // must not guess — anything older than the window is left alone.
-        if (d.task_date < oldestStr) continue;
+        if (d.task_date < snapshotFromStr) continue;
         if (lastCleanup && d.task_date <= lastCleanup) continue;
         if (isDelegationWaived(d, cancellations)) continue;
 
@@ -217,6 +260,16 @@ export function useMarkMissedTasks({ person, enabled }) {
           url: '/pais',
           tag: `broken-delegation-${d.id}`,
         });
+      }
+
+      // Everything above completed, so these days never need checking again.
+      // If this write fails the next run simply repeats the same range, which
+      // is harmless: existing rows are detected and the unique index refuses
+      // duplicates anyway.
+      try {
+        await MissedCheckService.setCheckedThrough(person, yesterdayStr);
+      } catch (e) {
+        console.error('markMissedTasks: could not advance checkpoint', e);
       }
 
       // Alert parents once when the child crosses the 3-failure penalty

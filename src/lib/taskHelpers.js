@@ -62,6 +62,7 @@ export const TASK_ICONS = {
   'Mesa jantar': '🍽️',
   'Apanhar e Dobrar roupa': '🧺',
   'Estender roupa': '👕',
+  'Lavandaria': '🧼',
   'Despejar lixo': '🗑️',
   'Meias (10x)': '🧦',
   'Higiene Sidney': '🛁',
@@ -69,7 +70,7 @@ export const TASK_ICONS = {
   'Escovar Sidney': '🪮',
   'Limpeza mensal': '🧹',
   'Limpeza semanal': '🧽',
-  'Arrumar o quarto': '🛏️',
+  'Arrumar quarto': '🛏️',
   'Fatura IQA': '🧾',
   'Bónus Semanal': '🏆',
   'Campeão das Delegações': '🤝',
@@ -82,6 +83,7 @@ export const COMMON_TASKS = [
   'Mesa jantar',
   'Apanhar e Dobrar roupa',
   'Estender roupa',
+  'Lavandaria',
   'Despejar lixo',
   'Meias (10x)',
   'Higiene Sidney',
@@ -89,7 +91,7 @@ export const COMMON_TASKS = [
   'Escovar Sidney',
   'Limpeza mensal',
   'Limpeza semanal',
-  'Arrumar o quarto',
+  'Arrumar quarto',
   'Fatura IQA',
 ];
 

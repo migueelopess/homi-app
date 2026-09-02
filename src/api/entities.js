@@ -38,7 +38,7 @@ export const TaskService = {
   async listByDateRange(fromDate, toDate) {
     const { data, error } = await supabase
       .from('tasks')
-      .select('id, person, task_name, date, end_time, completion_type, approval_status, penalty_applied_at, failure_weight')
+      .select('id, person, task_name, date, end_time, completion_type, approval_status, penalty_applied_at, failure_weight, scheduled_task_id, occasional_task_id, delegation_id')
       .gte('date', fromDate)
       .lte('date', toDate);
     if (error) throw error;

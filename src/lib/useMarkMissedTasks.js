@@ -7,6 +7,7 @@ import { sendPushNotification } from '@/api/supabaseClient';
 import {
   getWeekKey, getLocalDateStr, sameTaskSlot, countFailures, applyCancellations,
   PENALTIES, isDelegationWaived, BROKEN_DELEGATION_WEIGHT,
+  scheduledOccurrence, delegationOccurrence, settlesSlot,
 } from './taskHelpers';
 
 // Module-level Set — persists across component remounts within the same app session
@@ -126,9 +127,13 @@ export function useMarkMissedTasks({ person, enabled }) {
       let createdFailures = 0;
 
       // Rows created during this run, so a later day in the same loop sees them.
+      // A record only settles the occurrence it was written against. Matching
+      // on name + deadline alone let an ad-hoc chore registered from the
+      // Registar page stand in for a scheduled one, so skipping the scheduled
+      // task cost nothing.
       const recorded = windowTasks.filter(t => t.person === person);
-      const hasRecord = (taskName, dateStr, endTime) => recorded.some(
-        t => t.task_name === taskName && t.date === dateStr && sameTaskSlot(t.end_time, endTime)
+      const hasRecord = (dateStr, occurrence) => recorded.some(
+        t => t.date === dateStr && settlesSlot(t, occurrence)
       );
 
       const cursor = new Date(scanStart);
@@ -169,7 +174,7 @@ export function useMarkMissedTasks({ person, enabled }) {
           );
           if (wasCancelled) continue;
 
-          if (!hasRecord(scheduledTask.task_name, dateStr, scheduledTask.end_time)) {
+          if (!hasRecord(dateStr, scheduledOccurrence(scheduledTask))) {
             try {
               await TaskService.create({
                 person,
@@ -181,6 +186,7 @@ export function useMarkMissedTasks({ person, enabled }) {
                 week_key: getWeekKey(date),
                 month_key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
                 approval_status: 'approved',
+                scheduled_task_id: scheduledTask.id,
               });
             } catch (err) {
               // 23505 = another device recorded this same slot first. The DB
@@ -193,6 +199,7 @@ export function useMarkMissedTasks({ person, enabled }) {
               task_name: scheduledTask.task_name,
               date: dateStr,
               end_time: scheduledTask.end_time ?? null,
+              scheduled_task_id: scheduledTask.id,
             });
             createdFailures++;
 
@@ -230,7 +237,7 @@ export function useMarkMissedTasks({ person, enabled }) {
 
         // Any existing row for this slot means it was either delivered or
         // already marked as missed — nothing to do either way.
-        if (hasRecord(d.task_name, d.task_date, d.end_time)) continue;
+        if (hasRecord(d.task_date, delegationOccurrence(d))) continue;
 
         const brokenDate = new Date(d.task_date + 'T00:00:00');
         try {
@@ -245,12 +252,13 @@ export function useMarkMissedTasks({ person, enabled }) {
             month_key: d.task_date.slice(0, 7),
             approval_status: 'approved',
             failure_weight: BROKEN_DELEGATION_WEIGHT,
+            delegation_id: d.id,
           });
         } catch (err) {
           if (err?.code === '23505') continue;
           throw err;
         }
-        recorded.push({ task_name: d.task_name, date: d.task_date, end_time: d.end_time ?? null });
+        recorded.push({ task_name: d.task_name, date: d.task_date, end_time: d.end_time ?? null, delegation_id: d.id });
         createdFailures += BROKEN_DELEGATION_WEIGHT;
 
         sendPushNotification({

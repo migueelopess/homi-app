@@ -16,11 +16,30 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const DAY_KEYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
-// Same rule as the frontend's sameTaskSlot: a record with no end_time predates
-// time-slot tracking and matches any occurrence of that task.
+// Same rule as the frontend's sameTaskSlot: an exact match on the deadline,
+// "no deadline" included. A record with no end_time used to match every
+// occurrence of that name, so an ad-hoc chore silenced a scheduled task's
+// reminders.
 function sameTaskSlot(recordEndTime: string | null, taskEndTime: string | null): boolean {
-  if (recordEndTime === null || recordEndTime === "") return true;
-  return recordEndTime === (taskEndTime ?? "");
+  return (recordEndTime ?? "") === (taskEndTime ?? "");
+}
+
+// Mirrors the frontend's taskSlotKey / settlesSlot: which occurrence a `tasks`
+// row settles. Two children can share a task name and deadline (this family has
+// "Arrumar quarto" 19:00 three times over), so name + slot alone cannot tell a
+// child's own task from one they took over from a sibling.
+type SlotSource = {
+  scheduled_task_id?: number | null;
+  occasional_task_id?: number | null;
+  delegation_id?: string | null;
+};
+type Occurrence = { key: string | null; task_name: string; end_time: string | null };
+
+function taskSlotKey(t: SlotSource): string | null {
+  if (t.delegation_id) return `d:${t.delegation_id}`;
+  if (t.occasional_task_id) return `o:${t.occasional_task_id}`;
+  if (t.scheduled_task_id) return `s:${t.scheduled_task_id}`;
+  return null;
 }
 
 async function sendPushToSubscriptions(
@@ -170,24 +189,27 @@ Deno.serve(async (req) => {
     // reminder.
     const { data: completedTasks } = await supabase
       .from("tasks")
-      .select("person, task_name, date, end_time")
+      .select("person, task_name, date, end_time, scheduled_task_id, occasional_task_id, delegation_id")
       .eq("date", todayStr);
 
     const recorded = completedTasks || [];
-    const isRecorded = (person: string | null, taskName: string, endTime: string | null) =>
-      recorded.some(
-        (t) =>
-          t.person === person &&
-          t.task_name === taskName &&
-          sameTaskSlot(t.end_time, endTime)
-      );
+    const isRecorded = (person: string | null, occurrence: Occurrence) =>
+      recorded.some((t) => {
+        if (t.person !== person) return false;
+        const key = taskSlotKey(t);
+        // Both sides identified: compare only that. Otherwise fall back to
+        // name + exact slot, for rows written before these columns existed.
+        if (key && occurrence.key) return key === occurrence.key;
+        return t.task_name === occurrence.task_name && sameTaskSlot(t.end_time, occurrence.end_time);
+      });
 
     let totalSent = 0;
 
     // Process scheduled tasks
     for (const task of scheduledTasks || []) {
       if (!task.end_time || !task.person) continue;
-      if (isRecorded(task.person, task.task_name, task.end_time)) continue;
+      const ownOccurrence: Occurrence = { key: `s:${task.id}`, task_name: task.task_name, end_time: task.end_time };
+      if (isRecorded(task.person, ownOccurrence)) continue;
 
       // Check if this task was delegated to someone else
       const delegation = acceptedDelegations.find(
@@ -196,7 +218,7 @@ Deno.serve(async (req) => {
       // If delegated and accepted, send reminder to the accepting person instead
       const targetPerson = delegation ? delegation.to_person : task.person;
       // Also skip if the accepting person already completed it
-      if (delegation && isRecorded(targetPerson, task.task_name, task.end_time)) continue;
+      if (delegation && isRecorded(targetPerson, { key: `d:${delegation.id}`, task_name: task.task_name, end_time: task.end_time })) continue;
 
       // Parents waived this occurrence — nobody should be nagged about it.
       if (isCancelled(task.task_name, task.end_time, task.person, targetPerson)) continue;

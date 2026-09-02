@@ -4,7 +4,7 @@ import { ScheduledTaskService, OccasionalTaskService, TaskService, TaskReminderS
 import { sendTaskReminder } from '@/api/pushNotifications';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { useAuth } from '@/lib/AuthContext';
-import { PEOPLE, PERSON_AVATARS, TASK_ICONS, COMPLETION_TYPES, SIDNEY_TASKS, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, TASK_ICONS, COMPLETION_TYPES, SIDNEY_TASKS, getLocalDateStr, sameTaskSlot, scheduledOccurrence, occasionalOccurrence, delegationOccurrence, settlesSlot } from '@/lib/taskHelpers';
 import { Lock, ChevronLeft, ChevronRight, Bell, BellRing, Clock, X, ArrowRightLeft, TimerReset, Ban } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -219,7 +219,7 @@ export default function Tarefas() {
           return {
             ...t,
             _type: 'scheduled',
-            _done: completedTasks.some(ct => ct.person === person && ct.task_name === t.task_name && ct.date === dateStr && sameTaskSlot(ct.end_time, t.end_time)),
+            _done: completedTasks.some(ct => ct.person === person && ct.date === dateStr && settlesSlot(ct, scheduledOccurrence(t))),
             _reminded: reminders.some(r => r.person === person && r.task_name === t.task_name && sameTaskSlot(r.end_time, t.end_time)),
             _overdue: extension ? false : overdue,
             _extended: !!extension,
@@ -242,7 +242,7 @@ export default function Tarefas() {
           return {
             ...t,
             _type: 'occasional',
-            _done: t.completed || completedTasks.some(ct => ct.person === person && ct.task_name === t.task_name && ct.date === dateStr && sameTaskSlot(ct.end_time, t.end_time)),
+            _done: t.completed || completedTasks.some(ct => ct.person === person && ct.date === dateStr && settlesSlot(ct, occasionalOccurrence(t))),
             _reminded: reminders.some(r => r.person === person && r.task_name === t.task_name && sameTaskSlot(r.end_time, t.end_time)),
             _overdue: extension ? false : overdue,
             _extended: !!extension,
@@ -270,7 +270,7 @@ export default function Tarefas() {
             person,
             task_name: d.task_name,
             _type: d.task_type,
-            _done: completedTasks.some(ct => ct.person === person && ct.task_name === d.task_name && ct.date === dateStr && sameTaskSlot(ct.end_time, originalTask.end_time)),
+            _done: completedTasks.some(ct => ct.person === person && ct.date === dateStr && settlesSlot(ct, delegationOccurrence(d, originalTask.end_time))),
             _reminded: reminders.some(r => r.person === person && r.task_name === d.task_name && sameTaskSlot(r.end_time, originalTask.end_time)),
             _overdue: extension ? false : overdue,
             _extended: !!extension,

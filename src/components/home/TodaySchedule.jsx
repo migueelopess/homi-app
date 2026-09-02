@@ -6,7 +6,7 @@ import { Clock, CheckCircle2, Circle, Star, ArrowRightLeft } from 'lucide-react'
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
-import { TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
+import { TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, sameTaskSlot, scheduledOccurrence, delegationOccurrence, settlesSlot } from '@/lib/taskHelpers';
 import TaskCapture from './TaskCapture';
 import Portal from '@/components/layout/Portal';
 import { toast } from 'sonner';
@@ -20,10 +20,12 @@ function getTodayKey() {
   return new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
 }
 
+// Only a record that settles *this* occurrence counts. A chore registered from
+// the Registar page settles none, and a sibling's delegated copy of the same
+// task at the same hour is a different occurrence entirely.
 function isTaskDone(scheduledTask, todayTasks) {
-  return todayTasks.some(t =>
-    t.task_name === scheduledTask.task_name && sameTaskSlot(t.end_time, scheduledTask.end_time)
-  );
+  const occurrence = scheduledOccurrence(scheduledTask);
+  return todayTasks.some(t => settlesSlot(t, occurrence));
 }
 
 function isOverdue(endTime) {
@@ -157,7 +159,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
   const totalAll = todaySchedule.length + todayOccasional.length + delegatedScheduledToMe.length + delegatedOccasionalToMe.length;
   const doneScheduled = todaySchedule.filter(t => isTaskDone(t, todayTasks)).length;
   const doneDelegatedScheduled = delegatedScheduledToMe.filter(d =>
-    todayTasks.some(t => t.task_name === d.task_name && t.person === person && sameTaskSlot(t.end_time, d.end_time))
+    todayTasks.some(t => t.person === person && settlesSlot(t, delegationOccurrence(d)))
   ).length;
   const totalDone = doneScheduled + doneDelegatedScheduled;
 
@@ -237,7 +239,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
         {delegatedOccasionalToMe.map((d, i) => {
           const isExtended = extensions.some(e => e.task_name === d.task_name && (e.person === d.from_person || e.person === person) && sameTaskSlot(e.end_time, d.end_time));
           const overdue = !isExtended && isOverdue(d.end_time);
-          const isDone = todayTasks.some(t => t.task_name === d.task_name && t.person === person && sameTaskSlot(t.end_time, d.end_time));
+          const isDone = todayTasks.some(t => t.person === person && settlesSlot(t, delegationOccurrence(d)));
           if (isDone) return null;
           return (
             <motion.div
@@ -340,7 +342,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
 
         {/* Delegated scheduled tasks TO me */}
         {delegatedScheduledToMe.map((d, i) => {
-          const isDone = todayTasks.some(t => t.task_name === d.task_name && t.person === person && sameTaskSlot(t.end_time, d.end_time));
+          const isDone = todayTasks.some(t => t.person === person && settlesSlot(t, delegationOccurrence(d)));
           const isExtended = extensions.some(e => e.task_name === d.task_name && (e.person === d.from_person || e.person === person) && sameTaskSlot(e.end_time, d.end_time));
           const overdue = !isDone && !isExtended && isOverdue(d.end_time);
           const active = isActive(null, d.end_time);

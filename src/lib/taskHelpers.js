@@ -104,13 +104,74 @@ export function getTaskIcon(taskName) {
 // "slot" that tells those occurrences apart, so completing/cancelling/extending
 // or reminding one no longer affects the others.
 //
-// `recordEndTime` is the end_time stored on a completion/reminder/extension/
-// cancellation row; `taskEndTime` is the occurrence we're matching against.
-// Records created before slot tracking existed have no end_time — those fall
-// back to name-only matching so historical data keeps working.
+// Matching is exact, "no deadline" included. This used to treat a record with
+// no end_time as a wildcard matching every slot — so a chore registered from
+// the Registar page (those carry no deadline at all) ticked off any scheduled
+// task of the same name, and hid the real one from the missed-task check.
 export function sameTaskSlot(recordEndTime, taskEndTime) {
-  if (recordEndTime == null || recordEndTime === '') return true;
-  return recordEndTime === (taskEndTime ?? '');
+  return (recordEndTime ?? '') === (taskEndTime ?? '');
+}
+
+// ---------------------------------------------------------------
+// Occurrence identity
+// ---------------------------------------------------------------
+//
+// Name + deadline is still not enough to tell two occurrences apart. In this
+// family "Arrumar quarto" 19:00 and "Meias (10x)" 20:00 exist for all three
+// children and "Passear Sidney" 20:00 for two of them — so the moment one
+// delegates their copy to a sibling who already has their own, the two are
+// identical on (person, name, date, end_time) and a single photo settled both.
+//
+// Every row in `tasks` therefore records *which* occurrence it settles, via
+// `delegation_id` / `occasional_task_id` / `scheduled_task_id`. A chore
+// registered from the Registar page carries none of the three: it is its own
+// thing and settles nothing.
+export const scheduledOccurrence = (t) => ({
+  key: `s:${t.id}`, task_name: t.task_name, end_time: t.end_time ?? null,
+});
+export const occasionalOccurrence = (t) => ({
+  key: `o:${t.id}`, task_name: t.task_name, end_time: t.end_time ?? null,
+});
+// `fallbackEndTime` is the original task's deadline, for older delegation rows
+// written before the delegation itself carried one.
+export const delegationOccurrence = (d, fallbackEndTime = null) => ({
+  key: `d:${d.id}`, task_name: d.task_name, end_time: d.end_time ?? fallbackEndTime,
+});
+
+// The occurrence a `tasks` row settles, or null when it settles none — an
+// ad-hoc chore, or a row written by an app version that predates these columns
+// and is still cached on someone's device.
+export function taskSlotKey(task) {
+  if (!task) return null;
+  if (task.delegation_id) return `d:${task.delegation_id}`;
+  if (task.occasional_task_id) return `o:${task.occasional_task_id}`;
+  if (task.scheduled_task_id) return `s:${task.scheduled_task_id}`;
+  return null;
+}
+
+// The identity columns to stamp on a new `tasks` row. Exactly one is set (or
+// none, for an ad-hoc chore), and a delegation always wins: the acceptor is
+// settling the delegation, not their own copy of a same-named task.
+/** @param {{ delegationId?: any, occasionalTaskId?: any, scheduledTaskId?: any }} [source] */
+export function slotColumns(source = {}) {
+  const { delegationId, occasionalTaskId, scheduledTaskId } = source;
+  if (delegationId) return { delegation_id: delegationId, occasional_task_id: null, scheduled_task_id: null };
+  if (occasionalTaskId) return { delegation_id: null, occasional_task_id: occasionalTaskId, scheduled_task_id: null };
+  if (scheduledTaskId) return { delegation_id: null, occasional_task_id: null, scheduled_task_id: scheduledTaskId };
+  return { delegation_id: null, occasional_task_id: null, scheduled_task_id: null };
+}
+
+// True if `task` (a completion or a failure) settles `occurrence`.
+//
+// When both sides carry an identity we compare only that — exact, and immune
+// to two children sharing a task name and deadline. When either side has none
+// we fall back to name + exact slot, so rows already in the database and
+// devices still running an older cached build keep behaving correctly.
+export function settlesSlot(task, occurrence) {
+  const key = taskSlotKey(task);
+  if (key && occurrence.key) return key === occurrence.key;
+  return task.task_name === occurrence.task_name
+    && sameTaskSlot(task.end_time, occurrence.end_time);
 }
 
 // True if the parents cancelled this exact task occurrence (same person, day
@@ -322,11 +383,14 @@ export function countFailures(tasks, person) {
 // normalized to not_done by TaskService.reject, so rejections correctly
 // flip a delegation back to "broken".
 export function isDelegationFulfilled(delegation, tasks = []) {
+  // Matched on the delegation's own identity: the acceptor may well have their
+  // own same-named task at the same hour, and doing that one is not delivering
+  // on what they took over.
+  const occurrence = delegationOccurrence(delegation);
   return tasks.some(t =>
     t.person === delegation.to_person &&
-    t.task_name === delegation.task_name &&
     t.date === delegation.task_date &&
-    sameTaskSlot(t.end_time, delegation.end_time) &&
+    settlesSlot(t, occurrence) &&
     t.completion_type !== 'not_done' &&
     t.completion_type !== 'cancelled'
   );

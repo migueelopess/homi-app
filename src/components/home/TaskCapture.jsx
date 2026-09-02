@@ -4,7 +4,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { TaskService, TaskReminderService, OccasionalTaskService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { uploadTaskPhoto } from '@/api/storage';
-import { COMPLETION_TYPES, getTaskValue, getWeekKey, getCurrentMonthKey, getLocalDateStr, sameTaskSlot } from '@/lib/taskHelpers';
+import { COMPLETION_TYPES, getTaskValue, getWeekKey, getCurrentMonthKey, getLocalDateStr, sameTaskSlot, slotColumns } from '@/lib/taskHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Loader2, RefreshCw, WifiOff } from 'lucide-react';
 
@@ -80,9 +80,22 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
         ? (hasReminder ? 'on_time_with_reminder' : 'on_time_no_reminder')
         : 'late';
       const value = taskValue(task, completion_type);
-      const occasionalTaskId = (task._occasional || task._type === 'occasional')
+      const isOccasional = task._occasional || task._type === 'occasional';
+      const occasionalTaskId = isOccasional
         ? (task._delegated ? task.occasional_task_id : task.id)
         : null;
+
+      // Which occurrence this photo settles. For a delegated card `task` is the
+      // delegation row, so its `id` is the delegation's; otherwise it is the
+      // scheduled/occasional task's own id. Without this the row is only
+      // identified by name + deadline, and a child who has their own "Arrumar
+      // quarto" at 19:00 would settle a sibling's delegated one with the same
+      // photo.
+      const source = slotColumns({
+        delegationId: task._delegated ? task.id : null,
+        occasionalTaskId: task._delegated ? null : occasionalTaskId,
+        scheduledTaskId: !task._delegated && !isOccasional ? task.id : null,
+      });
 
       const promises = [
         TaskService.create({
@@ -95,6 +108,7 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
           week_key: getWeekKey(new Date()),
           month_key: getCurrentMonthKey(),
           photo_url,
+          ...source,
         }),
       ];
       if (occasionalTaskId) {

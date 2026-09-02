@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { getLocalDateStr, sameTaskSlot } from './taskHelpers';
+import { getLocalDateStr, sameTaskSlot, scheduledOccurrence, delegationOccurrence, settlesSlot } from './taskHelpers';
 
 function getTodayKey() {
   return new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
@@ -46,8 +46,11 @@ function buildTodayList({ scheduledTasks, todayTasks, person, occasionalTasks, d
     d => d.from_person === person && d.status === 'accepted'
   );
 
-  const isDone = (taskName, endTime) => todayTasks.some(
-    t => t.task_name === taskName && t.date === today && sameTaskSlot(t.end_time, endTime)
+  // Matched on the occurrence, not on the name: an ad-hoc chore registered from
+  // the Registar page must not silence the reminder for a scheduled task, and a
+  // child's own task must not silence the one they took over from a sibling.
+  const isDone = (occurrence) => todayTasks.some(
+    t => t.date === today && settlesSlot(t, occurrence)
   );
 
   const scheduled = scheduledTasks.filter((task) => {
@@ -55,7 +58,7 @@ function buildTodayList({ scheduledTasks, todayTasks, person, occasionalTasks, d
     if (!task.days_of_week?.includes(todayKey)) return false;
     if (handedOver.some(d => d.task_type === 'scheduled' && d.scheduled_task_id === task.id)) return false;
     if (isCancelled(task.task_name, task.end_time)) return false;
-    return !isDone(task.task_name, task.end_time);
+    return !isDone(scheduledOccurrence(task));
   });
 
   const occasional = occasionalTasks.filter((task) => {
@@ -79,7 +82,7 @@ function buildTodayList({ scheduledTasks, todayTasks, person, occasionalTasks, d
     .filter(d =>
       d.end_time &&
       !isCancelledFor(d.task_name, d.end_time, [person, d.from_person]) &&
-      !isDone(d.task_name, d.end_time)
+      !isDone(delegationOccurrence(d))
     );
 
   return { scheduled, occasional, takenOn };

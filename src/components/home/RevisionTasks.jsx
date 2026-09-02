@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { Camera, Loader2, PencilLine } from 'lucide-react';
 import { TaskService } from '@/api/entities';
+import { INVALIDATE } from '@/lib/queries';
 import { uploadTaskPhoto } from '@/api/storage';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { getTaskIcon } from '@/lib/taskHelpers';
@@ -31,8 +32,8 @@ export default function RevisionTasks({ tasks = [], person }) {
     },
     onSuccess: () => {
       lastAttemptRef.current = null;
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['pendingTasks'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.tasks });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.pendingTasks });
       toast.success('Corrigida — à espera de aprovação 📸');
     },
     onError: (err) => {

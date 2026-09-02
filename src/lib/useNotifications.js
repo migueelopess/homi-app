@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { getLocalDateStr, sameTaskSlot, scheduledOccurrence, delegationOccurrence, settlesSlot } from './taskHelpers';
+import {
+  getLocalDateStr, scheduledOccurrence, occasionalOccurrence,
+  delegationOccurrence, settlesSlot, isDelegationWaived,
+} from './taskHelpers';
 
 function getTodayKey() {
   return new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
@@ -34,13 +37,9 @@ function buildTodayList({ scheduledTasks, todayTasks, person, occasionalTasks, d
   // A cancellation is recorded against whoever owned the occurrence, so for a
   // task taken over from a sibling we have to accept a tombstone written
   // against either of them.
-  const isCancelledFor = (taskName, endTime, people) => cancellations.some(
-    c => c.task_date === today &&
-         c.task_name === taskName &&
-         people.includes(c.person) &&
-         sameTaskSlot(c.end_time, endTime)
+  const isCancelled = (occurrence) => cancellations.some(
+    c => c.task_date === today && c.person === person && settlesSlot(c, occurrence)
   );
-  const isCancelled = (taskName, endTime) => isCancelledFor(taskName, endTime, [person]);
 
   const handedOver = todayDelegations.filter(
     d => d.from_person === person && d.status === 'accepted'
@@ -57,7 +56,7 @@ function buildTodayList({ scheduledTasks, todayTasks, person, occasionalTasks, d
     if (task.person !== person) return false;
     if (!task.days_of_week?.includes(todayKey)) return false;
     if (handedOver.some(d => d.task_type === 'scheduled' && d.scheduled_task_id === task.id)) return false;
-    if (isCancelled(task.task_name, task.end_time)) return false;
+    if (isCancelled(scheduledOccurrence(task))) return false;
     return !isDone(scheduledOccurrence(task));
   });
 
@@ -66,7 +65,7 @@ function buildTodayList({ scheduledTasks, todayTasks, person, occasionalTasks, d
     if (task.completed) return false;
     if (task.date !== today) return false;
     if (handedOver.some(d => d.task_type === 'occasional' && d.occasional_task_id === task.id)) return false;
-    return !isCancelled(task.task_name, task.end_time);
+    return !isCancelled(occasionalOccurrence(task));
   });
 
   // Tasks a sibling handed to this person and they accepted — theirs now, so
@@ -81,7 +80,7 @@ function buildTodayList({ scheduledTasks, todayTasks, person, occasionalTasks, d
     })
     .filter(d =>
       d.end_time &&
-      !isCancelledFor(d.task_name, d.end_time, [person, d.from_person]) &&
+      !isDelegationWaived(d, cancellations) &&
       !isDone(delegationOccurrence(d))
     );
 

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ScheduledTaskService, OccasionalTaskService } from '@/api/entities';
+import { scheduledTasksQuery, occasionalTasksQuery } from '@/lib/queries';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { Lock, CalendarDays } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -11,15 +11,8 @@ import { PageSkeleton } from '@/components/layout/PageSkeleton';
 export default function Rotinas() {
   const { data: user, isLoading: loadingUser } = useCurrentUser();
 
-  const { data: scheduledTasks = [], isLoading } = useQuery({
-    queryKey: ['scheduledTasks'],
-    queryFn: () => ScheduledTaskService.list(),
-  });
-
-  const { data: occasionalTasks = [], isLoading: loadingOccasional } = useQuery({
-    queryKey: ['occasionalTasks'],
-    queryFn: () => OccasionalTaskService.list('-date', 200),
-  });
+  const { data: scheduledTasks = [], isLoading } = useQuery(scheduledTasksQuery());
+  const { data: occasionalTasks = [], isLoading: loadingOccasional } = useQuery(occasionalTasksQuery());
 
   if (isLoading || loadingUser || loadingOccasional) {
     return <PageSkeleton />;

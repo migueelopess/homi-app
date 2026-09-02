@@ -10,6 +10,7 @@ export function usePushSubscription(user) {
   const [pushState, setPushState] = useState({
     supported: false,
     subscribed: false,
+    person: null,
     loading: true,
   });
 
@@ -31,22 +32,25 @@ export function usePushSubscription(user) {
     return () => { cancelled = true; };
   }, []);
 
-  // Auto-subscribe when user is available and push is supported but not subscribed
+  // Registered for *this* person, not merely registered. A sibling signing in
+  // on the same phone leaves the stored row pointing at whoever came before,
+  // and they would keep receiving each other's notifications.
+  const subscribedForMe = pushState.subscribed && pushState.person === person;
+
+  // Auto-subscribe (or re-point an existing subscription) once the user is known
   useEffect(() => {
     if (!userId || !person || pushState.loading || !pushState.supported) return;
-    if (pushState.subscribed) return;
+    if (subscribedForMe) return;
 
     // Only auto-subscribe if notification permission is already granted
     if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      console.log('[usePushSubscription] Auto-subscribing for', person);
       subscribeToPush(userId, person).then((result) => {
-        console.log('[usePushSubscription] Auto-subscribe result:', result);
         if (result.success) {
-          setPushState((prev) => ({ ...prev, subscribed: true }));
+          setPushState((prev) => ({ ...prev, subscribed: true, person }));
         }
       });
     }
-  }, [userId, person, pushState.loading, pushState.supported, pushState.subscribed]);
+  }, [userId, person, pushState.loading, pushState.supported, subscribedForMe]);
 
   const subscribe = useCallback(async () => {
     if (!userId || !person) {
@@ -59,6 +63,7 @@ export function usePushSubscription(user) {
     setPushState((prev) => ({
       ...prev,
       subscribed: result.success,
+      person: result.success ? person : prev.person,
       loading: false,
     }));
     return result;
@@ -67,12 +72,12 @@ export function usePushSubscription(user) {
   const unsubscribe = useCallback(async () => {
     setPushState((prev) => ({ ...prev, loading: true }));
     await unsubscribeFromPush();
-    setPushState((prev) => ({ ...prev, subscribed: false, loading: false }));
+    setPushState((prev) => ({ ...prev, subscribed: false, person: null, loading: false }));
   }, []);
 
   return {
     pushSupported: pushState.supported,
-    pushSubscribed: pushState.subscribed,
+    pushSubscribed: subscribedForMe,
     pushLoading: pushState.loading,
     subscribe,
     unsubscribe,

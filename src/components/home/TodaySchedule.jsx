@@ -1,12 +1,13 @@
 import { useState, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { TaskDelegationService, TaskExtensionService, TaskCancellationService } from '@/api/entities';
+import { TaskDelegationService } from '@/api/entities';
+import { delegationsQuery, extensionsByDateQuery, cancellationsByDateQuery, INVALIDATE } from '@/lib/queries';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { Clock, CheckCircle2, Circle, Star, ArrowRightLeft } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
-import { TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, sameTaskSlot, scheduledOccurrence, delegationOccurrence, settlesSlot } from '@/lib/taskHelpers';
+import { TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, sameTaskSlot, scheduledOccurrence, occasionalOccurrence, delegationOccurrence, settlesSlot } from '@/lib/taskHelpers';
 import TaskCapture from './TaskCapture';
 import Portal from '@/components/layout/Portal';
 import { toast } from 'sonner';
@@ -52,28 +53,15 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
   const todayKey = getTodayKey();
   const today = getLocalDateStr();
 
-  // Fetch delegations for today
-  const { data: delegations = [] } = useQuery({
-    queryKey: ['taskDelegations'],
-    queryFn: () => TaskDelegationService.list('-created_at'),
-  });
+  const { data: delegations = [] } = useQuery(delegationsQuery());
+  // Extensions and cancellations the parents granted for today.
+  const { data: extensions = [] } = useQuery(extensionsByDateQuery(today));
+  const { data: cancellations = [] } = useQuery(cancellationsByDateQuery(today));
 
-  // Fetch extensions for today (granted by parents)
-  const { data: extensions = [] } = useQuery({
-    queryKey: ['taskExtensions', today],
-    queryFn: () => TaskExtensionService.getByDate(today),
-  });
-
-  // Fetch cancellations for today (parents may cancel a task for a child)
-  const { data: cancellations = [] } = useQuery({
-    queryKey: ['taskCancellations', today],
-    queryFn: () => TaskCancellationService.getByDate(today),
-  });
-
-  const isCancelled = (task) =>
-    cancellations.some(c =>
-      c.person === person && c.task_name === task.task_name && sameTaskSlot(c.end_time, task.end_time)
-    );
+  // Waived for this exact occurrence. Matching by name and hour alone meant a
+  // single cancellation silenced every same-named task at that time.
+  const isCancelled = (occurrence) =>
+    cancellations.some(c => c.person === person && settlesSlot(c, occurrence));
 
   const todayDelegations = delegations.filter(d => d.task_date === today);
 
@@ -92,7 +80,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
     // Hide tasks I delegated away
     .filter(t => !myDelegatedAway.some(d => d.task_type === 'scheduled' && d.scheduled_task_id === t.id))
     // Hide tasks cancelled by parents for today
-    .filter(t => !isCancelled(t))
+    .filter(t => !isCancelled(scheduledOccurrence(t)))
     .sort((a, b) => (a.start_time || '00:00').localeCompare(b.start_time || '00:00'));
 
   const todayOccasional = occasionalTasks
@@ -100,7 +88,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
     // Hide occasional tasks I delegated away
     .filter(t => !myDelegatedAway.some(d => d.task_type === 'occasional' && d.occasional_task_id === t.id))
     // Hide tasks cancelled by parents for today
-    .filter(t => !isCancelled(t))
+    .filter(t => !isCancelled(occasionalOccurrence(t)))
     .sort((a, b) => (a.end_time || '99:99').localeCompare(b.end_time || '99:99'));
 
   // Build delegated-to-me tasks as card items
@@ -130,7 +118,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
       });
     },
     onSuccess: (data, { taskName }) => {
-      queryClient.invalidateQueries({ queryKey: ['taskDelegations'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.delegations });
       toast.success(`Pedido de delegação enviado para "${taskName}"!`);
       setDelegateConfirm(null);
       // Send push to all other siblings

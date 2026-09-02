@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TaskService, PaymentService, TaskCancellationService } from '@/api/entities';
+import { tasksQuery, cancellationsQuery, pendingTasksQuery, lastPaidAtQuery, INVALIDATE } from '@/lib/queries';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { Lock, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Loader2, Check, AlertTriangle } from 'lucide-react';
 import PhotoModal from '@/components/parents/PhotoModal';
@@ -27,31 +28,28 @@ export default function Parents() {
   const [cleanupLoading, setCleanupLoading] = useState(false);
   const { data: user, isLoading: loadingUser } = useCurrentUser();
 
-  const { data: rawTasks = [], isLoading } = useQuery({
-    queryKey: ['tasks'],
-    queryFn: () => TaskService.list('-created_date', 500),
-  });
+  const { data: rawTasks = [], isLoading } = useQuery(tasksQuery());
 
   const { data: cancellations = [] } = useQuery({
-    queryKey: ['taskCancellations', 'all'],
-    queryFn: () => TaskCancellationService.list(),
+    ...cancellationsQuery(),
     enabled: isParent(user),
   });
 
   // Parent-cancelled occurrences are relabeled 'cancelled' so they never count
   // as failures (penalties) nor block the weekly bonus.
-  const tasks = applyCancellations(rawTasks, cancellations);
+  const tasks = useMemo(
+    () => applyCancellations(rawTasks, cancellations),
+    [rawTasks, cancellations],
+  );
 
   const { data: pendingTasks = [] } = useQuery({
-    queryKey: ['pendingTasks'],
-    queryFn: () => TaskService.listPending(),
+    ...pendingTasksQuery(),
     enabled: isParent(user),
   });
   const pendingCount = pendingTasks.length;
 
   const { data: lastPaidAts = {} } = useQuery({
-    queryKey: ['payments', 'last-at'],
-    queryFn: () => PaymentService.getLastPaidAt(),
+    ...lastPaidAtQuery(),
     enabled: isParent(user),
   });
 
@@ -72,6 +70,13 @@ export default function Parents() {
             task_date: task.date,
             end_time: task.end_time ?? null,
             cancelled_by: user?.id ?? null,
+            // Copied across so the tombstone waives exactly the occurrence that
+            // was deleted. Without it, deleting one of two same-named failures
+            // at the same hour (their own, and one taken over from a sibling)
+            // silently waived both.
+            scheduled_task_id: task.scheduled_task_id ?? null,
+            occasional_task_id: task.occasional_task_id ?? null,
+            delegation_id: task.delegation_id ?? null,
           });
         } catch (e) {
           // A tombstone may already exist (unique violation) — that's fine.
@@ -79,8 +84,9 @@ export default function Parents() {
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      queryClient.invalidateQueries({ queryKey: ['taskCancellations'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.tasks });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.cancellations });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.pendingTasks });
       toast.success('Tarefa eliminada permanentemente');
     },
   });
@@ -96,7 +102,7 @@ export default function Parents() {
       return PaymentService.createBulk(rows);
     },
     onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['payments', 'last-at'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.payments });
       const label = vars.persons.length === 1 ? vars.persons[0] : 'todos os filhos';
       toast.success(`Pagamento registado para ${label}`);
     },
@@ -109,7 +115,7 @@ export default function Parents() {
   const applyPenaltyMutation = useMutation({
     mutationFn: ({ person }) => TaskService.applyPenalty(person, user?.id),
     onSuccess: (updated, vars) => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.tasks });
       if (updated.length === 0) {
         toast.error('Sem falhas pendentes para descontar');
       } else {
@@ -140,12 +146,9 @@ export default function Parents() {
       } else {
         // Clear local cache immediately to reflect the cleanup. Keys must match
         // the ones the app actually queries under.
-        queryClient.resetQueries({ queryKey: ['tasks'] });
-        queryClient.resetQueries({ queryKey: ['occasionalTasks'] });
-        queryClient.resetQueries({ queryKey: ['taskReminders'] });
-        queryClient.resetQueries({ queryKey: ['taskDelegations'] });
-        queryClient.resetQueries({ queryKey: ['taskCancellations'] });
-        queryClient.resetQueries({ queryKey: ['taskExtensions'] });
+        for (const queryKey of Object.values(INVALIDATE)) {
+          queryClient.resetQueries({ queryKey });
+        }
         toast.success(
           `Limpeza concluída: ${data.deleted_tasks} tarefas, ${data.deleted_photos} fotos, ${data.deleted_occasional_tasks} ocasionais, ${data.deleted_reminders} lembretes, ${data.deleted_delegations} delegações apagados`
         );

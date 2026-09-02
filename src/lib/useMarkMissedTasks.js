@@ -168,9 +168,8 @@ export function useMarkMissedTasks({ person, enabled }) {
           // Skip tasks cancelled by parents for that date
           const wasCancelled = cancellations.some(
             c => c.person === person &&
-                 c.task_name === scheduledTask.task_name &&
                  c.task_date === dateStr &&
-                 sameTaskSlot(c.end_time, scheduledTask.end_time)
+                 settlesSlot(c, scheduledOccurrence(scheduledTask))
           );
           if (wasCancelled) continue;
 

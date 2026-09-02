@@ -151,24 +151,26 @@ Deno.serve(async (req) => {
     // reminder at all — the child was explicitly told they don't have to do it.
     const { data: todayCancellations } = await supabase
       .from("task_cancellations")
-      .select("person, task_name, end_time")
+      .select("person, task_name, end_time, scheduled_task_id, occasional_task_id, delegation_id")
       .eq("task_date", todayStr);
 
     const cancellations = todayCancellations || [];
 
     // A cancellation is recorded against whoever owned the occurrence, which
     // may be the delegator or the person who took it on — either way the
-    // occurrence is off.
+    // occurrence is off. `keys` lists every identity that waives it: the task
+    // itself and, for a handed-over task, the delegation as well.
     const isCancelled = (
-      taskName: string,
-      endTime: string | null,
+      keys: Set<string>,
+      occurrence: Occurrence,
       ...people: Array<string | null>
-    ) => cancellations.some(
-      (c) =>
-        c.task_name === taskName &&
-        people.includes(c.person) &&
-        sameTaskSlot(c.end_time, endTime)
-    );
+    ) => cancellations.some((c) => {
+      if (!people.includes(c.person)) return false;
+      const key = taskSlotKey(c);
+      if (key) return keys.has(key);
+      // Tombstone written before cancellations carried an identity.
+      return c.task_name === occurrence.task_name && sameTaskSlot(c.end_time, occurrence.end_time);
+    });
 
     // 1. Get all scheduled tasks for today's day of week
     const { data: scheduledTasks } = await supabase
@@ -221,7 +223,9 @@ Deno.serve(async (req) => {
       if (delegation && isRecorded(targetPerson, { key: `d:${delegation.id}`, task_name: task.task_name, end_time: task.end_time })) continue;
 
       // Parents waived this occurrence — nobody should be nagged about it.
-      if (isCancelled(task.task_name, task.end_time, task.person, targetPerson)) continue;
+      const scheduledKeys = new Set([`s:${task.id}`]);
+      if (delegation) scheduledKeys.add(`d:${delegation.id}`);
+      if (isCancelled(scheduledKeys, ownOccurrence, task.person, targetPerson)) continue;
 
       const [h, m] = task.end_time.split(":").map(Number);
       const deadlineMinutes = h * 60 + m;
@@ -313,7 +317,12 @@ Deno.serve(async (req) => {
       const targetPerson = delegation ? delegation.to_person : task.person;
 
       // Parents waived this occurrence — nobody should be nagged about it.
-      if (isCancelled(task.task_name, task.end_time, task.person, targetPerson)) continue;
+      const occasionalKeys = new Set([`o:${task.id}`]);
+      if (delegation) occasionalKeys.add(`d:${delegation.id}`);
+      const occasionalOccurrence: Occurrence = {
+        key: `o:${task.id}`, task_name: task.task_name, end_time: task.end_time,
+      };
+      if (isCancelled(occasionalKeys, occasionalOccurrence, task.person, targetPerson)) continue;
 
       const [h, m] = task.end_time.split(":").map(Number);
       const deadlineMinutes = h * 60 + m;

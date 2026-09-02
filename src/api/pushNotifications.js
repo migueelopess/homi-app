@@ -125,11 +125,16 @@ export async function unsubscribeFromPush() {
 }
 
 /**
- * Check if push is currently subscribed on this device.
+ * Whether this device is subscribed to push, and for whom.
+ *
+ * `person` matters: a device is registered by endpoint, so when a different
+ * child signs in on the same phone the row is still pointing at the previous
+ * one. Reporting only "subscribed: true" made the caller skip re-registering,
+ * and every notification kept going to the sibling who logged in first.
  */
 export async function getPushSubscriptionState() {
   if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-    return { supported: false, subscribed: false };
+    return { supported: false, subscribed: false, person: null };
   }
 
   try {
@@ -137,23 +142,23 @@ export async function getPushSubscriptionState() {
     const subscription = await registration.pushManager.getSubscription();
 
     if (!subscription) {
-      return { supported: true, subscribed: false };
+      return { supported: true, subscribed: false, person: null };
     }
 
     const { data, error } = await supabase
       .from('push_subscriptions')
-      .select('id')
+      .select('id, person')
       .eq('endpoint', subscription.endpoint)
       .maybeSingle();
 
     if (error) {
       console.error('[Push] Failed to verify subscription in Supabase:', error);
-      return { supported: true, subscribed: false };
+      return { supported: true, subscribed: false, person: null };
     }
 
-    return { supported: true, subscribed: !!data };
+    return { supported: true, subscribed: !!data, person: data?.person ?? null };
   } catch {
-    return { supported: true, subscribed: false };
+    return { supported: true, subscribed: false, person: null };
   }
 }
 

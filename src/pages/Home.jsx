@@ -1,5 +1,9 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { TaskService, ScheduledTaskService, OccasionalTaskService, PaymentService, TaskCancellationService, TaskDelegationService } from '@/api/entities';
+import {
+  tasksQuery, scheduledTasksQuery, occasionalTasksQuery,
+  delegationsQuery, cancellationsQuery, lastPaidAtQuery,
+} from '@/lib/queries';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { PEOPLE, getCurrentWeekKey, getWeekTasks, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
 import PersonCard from '@/components/home/PersonCard';
@@ -14,6 +18,10 @@ import { useMaterializeDelegationChampion } from '@/lib/useMaterializeDelegation
 import { Calendar } from 'lucide-react';
 import { HomeSkeleton } from '@/components/layout/PageSkeleton';
 
+// Stable empty array — a fresh [] on every render would defeat the memoisation
+// of everything downstream of it.
+const EMPTY = [];
+
 export default function Home() {
   const currentWeek = getCurrentWeekKey();
   const { data: user } = useCurrentUser();
@@ -24,46 +32,54 @@ export default function Home() {
     data: rawTasks = [],
     isLoading: isLoadingTasks,
     isFetchedAfterMount: tasksAreFresh,
-  } = useQuery({
-    queryKey: ['tasks'],
-    queryFn: () => TaskService.list('-created_date', 500),
-  });
+  } = useQuery(tasksQuery());
 
-  const { data: cancellations = [], isFetchedAfterMount: cancellationsAreFresh } = useQuery({
-    queryKey: ['taskCancellations', 'all'],
-    queryFn: () => TaskCancellationService.list(),
-  });
+  const { data: cancellations = [], isFetchedAfterMount: cancellationsAreFresh } =
+    useQuery(cancellationsQuery());
 
   // Treat parent-cancelled occurrences as 'cancelled' (not failures) everywhere.
-  const tasks = applyCancellations(rawTasks, cancellations);
+  //
+  // Memoised, and so is everything derived from it below. These arrays feed the
+  // dependency lists of effects that write to the database (the bonus and
+  // delegation-prize materializers) and that schedule notification timers. A
+  // fresh array on every render made all of them re-run on every render —
+  // re-scanning hundreds of rows and tearing down and rebuilding every timer
+  // each time the page painted.
+  const tasks = useMemo(
+    () => applyCancellations(rawTasks, cancellations),
+    [rawTasks, cancellations],
+  );
 
-  const { data: scheduledTasks = [], isLoading: isLoadingScheduled } = useQuery({
-    queryKey: ['scheduledTasks'],
-    queryFn: () => ScheduledTaskService.list(),
-  });
-
-
+  const { data: scheduledTasks = [], isLoading: isLoadingScheduled } =
+    useQuery(scheduledTasksQuery());
 
   const { data: occasionalTasks = [] } = useQuery({
-    queryKey: ['occasionalTasks'],
-    queryFn: () => OccasionalTaskService.list('-date', 200),
+    ...occasionalTasksQuery(),
     enabled: !userIsParent && !!person,
   });
 
-  const { data: allDelegations = [], isFetchedAfterMount: delegationsAreFresh } = useQuery({
-    queryKey: ['taskDelegations'],
-    queryFn: () => TaskDelegationService.list('-created_at'),
-  });
+  const { data: allDelegations = [], isFetchedAfterMount: delegationsAreFresh } =
+    useQuery(delegationsQuery());
 
-  const { data: lastPaidAts = {} } = useQuery({
-    queryKey: ['payments', 'last-at'],
-    queryFn: () => PaymentService.getLastPaidAt(),
-  });
+  const { data: lastPaidAts = {} } = useQuery(lastPaidAtQuery());
 
-  const weekTasks = getWeekTasks(tasks, currentWeek);
+  const weekTasks = useMemo(() => getWeekTasks(tasks, currentWeek), [tasks, currentWeek]);
 
   const today = getLocalDateStr();
-  const todayTasks = tasks.filter(t => t.date === today);
+  const todayTasks = useMemo(() => tasks.filter(t => t.date === today), [tasks, today]);
+  const myTodayTasks = useMemo(
+    () => (userIsParent || !person ? [] : todayTasks.filter(t => t.person === person)),
+    [todayTasks, userIsParent, person],
+  );
+  const myRevisionTasks = useMemo(
+    () => tasks.filter(t => t.person === person && t.approval_status === 'needs_revision'),
+    [tasks, person],
+  );
+  const myOccasionalTasks = userIsParent ? EMPTY : occasionalTasks;
+  const recentTasks = useMemo(
+    () => (userIsParent ? tasks : tasks.filter(t => t.person === person)),
+    [tasks, userIsParent, person],
+  );
 
   // No cached data is passed in on purpose — the hook reads its own
   // authoritative snapshot from the DB before deciding anything.
@@ -86,9 +102,9 @@ export default function Home() {
 
   useNotifications({
     scheduledTasks,
-    todayTasks: todayTasks.filter(t => !userIsParent && t.person === person),
+    todayTasks: myTodayTasks,
     person: userIsParent ? null : person,
-    occasionalTasks: userIsParent ? [] : occasionalTasks,
+    occasionalTasks: myOccasionalTasks,
     delegations: allDelegations,
     cancellations,
   });
@@ -105,10 +121,7 @@ export default function Home() {
 
       {/* Tasks a parent sent back to be corrected */}
       {!userIsParent && person && (
-        <RevisionTasks
-          tasks={tasks.filter(t => t.person === person && t.approval_status === 'needs_revision')}
-          person={person}
-        />
+        <RevisionTasks tasks={myRevisionTasks} person={person} />
       )}
 
       {/* Today's Schedule for logged-in child */}
@@ -120,7 +133,7 @@ export default function Home() {
           </div>
           <TodaySchedule
             scheduledTasks={scheduledTasks}
-            todayTasks={todayTasks.filter(t => t.person === person)}
+            todayTasks={myTodayTasks}
             person={person}
             occasionalTasks={occasionalTasks}
           />
@@ -149,7 +162,7 @@ export default function Home() {
       {/* Recent Activity */}
       <div className="mb-4">
         <h2 className="text-lg font-bold text-foreground mb-3">Atividade Recente</h2>
-        <RecentActivity tasks={userIsParent ? tasks : tasks.filter(t => t.person === person)} />
+        <RecentActivity tasks={recentTasks} />
       </div>
     </div>
   );

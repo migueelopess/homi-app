@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { OccasionalTaskService } from '@/api/entities';
+import { INVALIDATE } from '@/lib/queries';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Trash2, Plus, Clock, Calendar, CheckCircle2, Circle, Euro } from 'lucide-react';
+import { Trash2, Plus, Clock, Calendar, Euro } from 'lucide-react';
 import { toast } from 'sonner';
 import { PEOPLE, PERSON_AVATARS, COMMON_TASKS, TASK_ICONS, getLocalDateStr } from '@/lib/taskHelpers';
 
@@ -45,7 +46,7 @@ export default function OccasionalTaskManager({ occasionalTasks }) {
   const createMutation = useMutation({
     mutationFn: (data) => OccasionalTaskService.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['occasionalTasks'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.occasionalTasks });
       setForm({ task_name: '', custom_task: '', date: getLocalDateStr(), end_time: '', notes: '', reward: '' });
       setShowCustom(false);
       toast.success('Tarefa ocasional criada!');
@@ -55,7 +56,7 @@ export default function OccasionalTaskManager({ occasionalTasks }) {
   const deleteMutation = useMutation({
     mutationFn: (id) => OccasionalTaskService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['occasionalTasks'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.occasionalTasks });
       toast.success('Tarefa removida');
     },
   });

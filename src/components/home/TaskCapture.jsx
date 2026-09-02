@@ -1,20 +1,24 @@
 import { forwardRef, useImperativeHandle, useRef, useState, useEffect } from 'react';
 import Portal from '@/components/layout/Portal';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { TaskService, TaskReminderService, OccasionalTaskService } from '@/api/entities';
+import { TaskService, OccasionalTaskService } from '@/api/entities';
+import { remindersByDateQuery, INVALIDATE } from '@/lib/queries';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { uploadTaskPhoto } from '@/api/storage';
 import { COMPLETION_TYPES, getTaskValue, getWeekKey, getCurrentMonthKey, getLocalDateStr, sameTaskSlot, slotColumns } from '@/lib/taskHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Loader2, RefreshCw, WifiOff } from 'lucide-react';
 
-function isWithinTimeWindow(endTime) {
+// Judged against the moment the photo was taken, not the moment the upload
+// finally lands. On weak wifi an upload can take half a minute or need two
+// retries, and a child who photographed the job at 18:58 must not be marked
+// late because the phone only got the bytes out at 19:01.
+function isWithinTimeWindow(endTime, at) {
   if (!endTime) return true;
-  const now = new Date();
   const [eh, em] = endTime.split(':').map(Number);
-  const end = new Date();
-  end.setHours(eh, em, 0);
-  return now <= end;
+  const end = new Date(at);
+  end.setHours(eh, em, 0, 0);
+  return at <= end;
 }
 
 // Value of a completed task. An occasional task carries its own explicit
@@ -51,12 +55,14 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
   const [failure, setFailure] = useState(null);
   const today = getLocalDateStr();
 
-  // Reminders sent to this person today — reduce the task's value.
-  const { data: reminders = [] } = useQuery({
-    queryKey: ['taskReminders', person, today],
-    queryFn: () => TaskReminderService.getByPersonAndDate(person, today),
+  // Reminders sent today — they halve the task's value. Read under the same key
+  // the parents' page invalidates, so a reminder sent seconds ago is already
+  // reflected here.
+  const { data: allReminders = [] } = useQuery({
+    ...remindersByDateQuery(today),
     enabled: !!person,
   });
+  const reminders = allReminders.filter(r => r.person === person);
 
   useImperativeHandle(ref, () => ({
     // Must be called synchronously inside the tap handler so the browser
@@ -69,13 +75,13 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
   }));
 
   const createMutation = useMutation({
-    mutationFn: async ({ task, file }) => {
+    mutationFn: async ({ task, file, capturedAt }) => {
       const photo_url = await uploadTaskPhoto(file, setStage);
 
       const hasReminder = reminders.some(
         r => r.task_name === task.task_name && sameTaskSlot(r.end_time, task.end_time)
       );
-      const inTime = task._isExtended || isWithinTimeWindow(task.end_time);
+      const inTime = task._isExtended || isWithinTimeWindow(task.end_time, capturedAt ?? new Date());
       const completion_type = inTime
         ? (hasReminder ? 'on_time_with_reminder' : 'on_time_no_reminder')
         : 'late';
@@ -128,10 +134,11 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
       return { completion_type, value, occasionalTaskId };
     },
     onSuccess: ({ completion_type, value, occasionalTaskId }) => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.tasks });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.pendingTasks });
       if (occasionalTaskId) {
-        queryClient.invalidateQueries({ queryKey: ['occasionalTasks'] });
-        queryClient.invalidateQueries({ queryKey: ['taskDelegations'] });
+        queryClient.invalidateQueries({ queryKey: INVALIDATE.occasionalTasks });
+        queryClient.invalidateQueries({ queryKey: INVALIDATE.delegations });
       }
       retryRef.current = null;
       setStage(null);
@@ -163,10 +170,12 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
     const task = pendingTaskRef.current;
     pendingTaskRef.current = null;
     if (!file || !task) return; // camera cancelled — nothing to do
-    retryRef.current = { task, file };
+    // Stamped here, and reused by every retry: this is when the chore was
+    // actually shown to be done.
+    retryRef.current = { task, file, capturedAt: new Date() };
     setFailure(null);
     setPhase('saving');
-    createMutation.mutate({ task, file });
+    createMutation.mutate(retryRef.current);
   };
 
   const retry = () => {

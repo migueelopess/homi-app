@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence } from 'framer-motion';
 import { CheckCheck, Loader2 } from 'lucide-react';
 import { TaskService } from '@/api/entities';
+import { pendingTasksQuery, INVALIDATE } from '@/lib/queries';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,10 +18,7 @@ export default function ApprovalsTab({ approverId }) {
   const [photoUrl, setPhotoUrl] = useState(null);
   const [pendingIds, setPendingIds] = useState(new Set());
 
-  const { data: pending = [], isLoading } = useQuery({
-    queryKey: ['pendingTasks'],
-    queryFn: () => TaskService.listPending(),
-  });
+  const { data: pending = [], isLoading } = useQuery(pendingTasksQuery());
 
   const setIdPending = (id, on) => {
     setPendingIds(prev => {
@@ -31,8 +29,8 @@ export default function ApprovalsTab({ approverId }) {
   };
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['pendingTasks'] });
-    queryClient.invalidateQueries({ queryKey: ['tasks'] });
+    queryClient.invalidateQueries({ queryKey: INVALIDATE.pendingTasks });
+    queryClient.invalidateQueries({ queryKey: INVALIDATE.tasks });
   };
 
   const approveMutation = useMutation({

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { TaskService, TaskReminderService } from '@/api/entities';
+import { TaskService } from '@/api/entities';
+import { remindersByDateQuery, INVALIDATE } from '@/lib/queries';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { uploadTaskPhoto } from '@/api/storage';
 import { Button } from '@/components/ui/button';
@@ -32,12 +33,13 @@ export default function RegisterTask() {
   const person = user?.linked_name;
   const userIsParent = isParent(user);
 
-  // Reminders sent to this person today — used to auto-derive the value.
-  const { data: reminders = [] } = useQuery({
-    queryKey: ['taskReminders', person, today],
-    queryFn: () => TaskReminderService.getByPersonAndDate(person, today),
+  // Reminders sent today — used to auto-derive the value. Same key the parents'
+  // page invalidates, so one sent moments ago already counts.
+  const { data: allReminders = [] } = useQuery({
+    ...remindersByDateQuery(today),
     enabled: !!person,
   });
+  const reminders = allReminders.filter(r => r.person === person);
 
   const createMutation = useMutation({
     mutationFn: async ({ name, file }) => {
@@ -71,7 +73,8 @@ export default function RegisterTask() {
       return { name, completion_type };
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.tasks });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.pendingTasks });
       lastAttemptRef.current = null;
       setStage(null);
       setTaskName('');

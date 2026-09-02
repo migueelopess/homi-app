@@ -161,6 +161,24 @@ export function slotColumns(source = {}) {
   return { delegation_id: null, occasional_task_id: null, scheduled_task_id: null };
 }
 
+// The occurrence descriptor of any row that carries the identity columns —
+// a `tasks` row or a `task_cancellations` tombstone.
+export const occurrenceOf = (row) => ({
+  key: taskSlotKey(row),
+  task_name: row.task_name,
+  end_time: row.end_time ?? null,
+});
+
+// Every identity a delegation can be waived through: its own, and the
+// scheduled/occasional task it was carved out of. Cancelling the original for
+// the sibling who delegated it must also let the sibling who accepted it off.
+export function delegationSlotKeys(delegation) {
+  const keys = new Set([`d:${delegation.id}`]);
+  if (delegation.scheduled_task_id) keys.add(`s:${delegation.scheduled_task_id}`);
+  if (delegation.occasional_task_id) keys.add(`o:${delegation.occasional_task_id}`);
+  return keys;
+}
+
 // True if `task` (a completion or a failure) settles `occurrence`.
 //
 // When both sides carry an identity we compare only that — exact, and immune
@@ -181,11 +199,11 @@ export function settlesSlot(task, occurrence) {
 // rows from `task_cancellations`.
 export function isTaskCancelled(task, cancellations = []) {
   if (!cancellations.length) return false;
+  const occurrence = occurrenceOf(task);
   return cancellations.some(c =>
     c.person === task.person &&
-    c.task_name === task.task_name &&
     c.task_date === task.date &&
-    sameTaskSlot(c.end_time, task.end_time)
+    settlesSlot(c, occurrence)
   );
 }
 
@@ -231,6 +249,14 @@ export function getWeekKey(date) {
 
 export function getCurrentWeekKey() {
   return getWeekKey(new Date());
+}
+
+// Returns the Monday (first day) of an ISO week given its key e.g. "2026-W17"
+export function getWeekStartDate(weekKey) {
+  const end = getWeekEndDate(weekKey);
+  const start = new Date(end);
+  start.setDate(end.getDate() - 6);
+  return start;
 }
 
 // Returns the Sunday (last day) of an ISO week given its key e.g. "2026-W17"
@@ -399,12 +425,15 @@ export function isDelegationFulfilled(delegation, tasks = []) {
 // Parents waived this occurrence — it counts against nobody, whether the
 // cancellation was recorded against the delegator or the acceptor.
 export function isDelegationWaived(delegation, cancellations = []) {
-  return cancellations.some(c =>
-    c.task_name === delegation.task_name &&
-    c.task_date === delegation.task_date &&
-    sameTaskSlot(c.end_time, delegation.end_time) &&
-    (c.person === delegation.to_person || c.person === delegation.from_person)
-  );
+  const keys = delegationSlotKeys(delegation);
+  return cancellations.some(c => {
+    if (c.task_date !== delegation.task_date) return false;
+    if (c.person !== delegation.to_person && c.person !== delegation.from_person) return false;
+    const key = taskSlotKey(c);
+    if (key) return keys.has(key);
+    // Tombstone written before cancellations carried an identity.
+    return c.task_name === delegation.task_name && sameTaskSlot(c.end_time, delegation.end_time);
+  });
 }
 
 // Per-person record of delegations taken on from a sibling.

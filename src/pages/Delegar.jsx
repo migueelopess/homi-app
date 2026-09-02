@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { TaskDelegationService, TaskService, TaskCancellationService } from '@/api/entities';
+import { TaskDelegationService } from '@/api/entities';
+import { tasksQuery, cancellationsQuery, delegationsQuery, INVALIDATE } from '@/lib/queries';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import {
@@ -30,27 +31,19 @@ export default function Delegar() {
   const [confirmAccept, setConfirmAccept] = useState(null);
 
   const { data: delegations = [], isLoading: loadingDelegations } = useQuery({
-    queryKey: ['taskDelegations'],
-    queryFn: () => TaskDelegationService.list('-created_at'),
+    ...delegationsQuery(),
     enabled: !!person,
   });
 
   // Needed to tell a delivered delegation from a broken one.
-  const { data: tasks = [] } = useQuery({
-    queryKey: ['tasks'],
-    queryFn: () => TaskService.list('-created_date', 500),
-  });
-
-  const { data: cancellations = [] } = useQuery({
-    queryKey: ['taskCancellations', 'all'],
-    queryFn: () => TaskCancellationService.list(),
-  });
+  const { data: tasks = [] } = useQuery(tasksQuery());
+  const { data: cancellations = [] } = useQuery(cancellationsQuery());
 
   const acceptMutation = useMutation({
     mutationFn: ({ id, fromPerson, taskName }) =>
       TaskDelegationService.accept(id, person),
     onSuccess: (data, { fromPerson, taskName }) => {
-      queryClient.invalidateQueries({ queryKey: ['taskDelegations'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.delegations });
       setConfirmAccept(null);
       toast.success(`Aceitaste a tarefa "${taskName}"!`);
       // Notify the person who delegated
@@ -69,9 +62,20 @@ export default function Delegar() {
         toast.error('Erro ao aceitar o pedido.');
       }
       setConfirmAccept(null);
-      queryClient.invalidateQueries({ queryKey: ['taskDelegations'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.delegations });
     },
   });
+
+  // This month's standings, and whether I'm currently barred from accepting
+  // because I broke a promise. Memoised: both walk every delegation against
+  // every task, and this component re-renders on each cache update.
+  const currentMonth = getCurrentMonthKey();
+  const { ranking, acceptBlock } = useMemo(() => ({
+    ranking: rankDelegations(
+      getDelegationStats(delegations, tasks, { monthKey: currentMonth, cancellations })
+    ),
+    acceptBlock: getAcceptBlock(delegations, tasks, person, cancellations),
+  }), [delegations, tasks, cancellations, currentMonth, person]);
 
   if (loadingUser || loadingDelegations) {
     return <PageSkeleton />;
@@ -104,13 +108,7 @@ export default function Delegar() {
     d => d.to_person === person && d.status === 'accepted' && d.task_date >= today
   );
 
-  // This month's standings, and whether I'm currently barred from accepting
-  // because I broke a promise.
-  const currentMonth = getCurrentMonthKey();
-  const monthStats = getDelegationStats(delegations, tasks, { monthKey: currentMonth, cancellations });
-  const ranking = rankDelegations(monthStats);
   const leaderScore = ranking[0]?.completed ?? 0;
-  const acceptBlock = getAcceptBlock(delegations, tasks, person, cancellations);
 
   return (
     <div className="max-w-lg mx-auto px-4 pt-6 pb-4">

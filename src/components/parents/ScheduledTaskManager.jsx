@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ScheduledTaskService } from '@/api/entities';
+import { INVALIDATE } from '@/lib/queries';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
 import { Trash2, Plus, Clock, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { PEOPLE, PERSON_AVATARS, COMMON_TASKS, TASK_ICONS } from '@/lib/taskHelpers';
@@ -47,7 +47,7 @@ export default function ScheduledTaskManager({ scheduledTasks }) {
   const createMutation = useMutation({
     mutationFn: (data) => ScheduledTaskService.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scheduledTasks'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.scheduledTasks });
       setForm({ task_name: '', custom_task: '', days_of_week: [], end_time: '' });
       setShowCustom(false);
       toast.success('Tarefa diária criada!');
@@ -57,7 +57,7 @@ export default function ScheduledTaskManager({ scheduledTasks }) {
   const deleteMutation = useMutation({
     mutationFn: (id) => ScheduledTaskService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scheduledTasks'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.scheduledTasks });
       toast.success('Tarefa removida');
     },
   });
@@ -78,7 +78,7 @@ export default function ScheduledTaskManager({ scheduledTasks }) {
   const updateMutation = useMutation({
     mutationFn: ({ id, updates }) => ScheduledTaskService.update(id, updates),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['scheduledTasks'] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.scheduledTasks });
       cancelEdit();
       toast.success('Tarefa atualizada!');
     },

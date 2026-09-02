@@ -1,10 +1,22 @@
 import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ScheduledTaskService, OccasionalTaskService, TaskService, TaskReminderService, TaskDelegationService, TaskExtensionService, TaskCancellationService } from '@/api/entities';
+import { TaskExtensionService, TaskCancellationService } from '@/api/entities';
+import {
+  scheduledTasksQuery, occasionalTasksQuery, tasksByDateQuery, remindersByDateQuery,
+  delegationsQuery, extensionsByDateQuery, cancellationsByDateQuery, INVALIDATE,
+} from '@/lib/queries';
 import { sendTaskReminder } from '@/api/pushNotifications';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { useAuth } from '@/lib/AuthContext';
-import { PEOPLE, PERSON_AVATARS, TASK_ICONS, COMPLETION_TYPES, SIDNEY_TASKS, getLocalDateStr, sameTaskSlot, scheduledOccurrence, occasionalOccurrence, delegationOccurrence, settlesSlot } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, TASK_ICONS, COMPLETION_TYPES, SIDNEY_TASKS, getLocalDateStr, sameTaskSlot, scheduledOccurrence, occasionalOccurrence, delegationOccurrence, settlesSlot, slotColumns } from '@/lib/taskHelpers';
+
+// Which occurrence a row in this page's list stands for. A task taken over from
+// a sibling is the delegation, not the original the card was built from.
+function occurrenceSource(task) {
+  if (task?._delegation?._isReceived) return { delegationId: task._delegation.id };
+  if (task?._type === 'occasional') return { occasionalTaskId: task.id };
+  return { scheduledTaskId: task?.id };
+}
 import { Lock, ChevronLeft, ChevronRight, Bell, BellRing, Clock, X, ArrowRightLeft, TimerReset, Ban } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -59,42 +71,24 @@ export default function Tarefas() {
   const dateStr = getLocalDateStr(selectedDate);
   const dayKey = DAYS_MAP_REVERSE[selectedDate.getDay()];
 
-  const { data: scheduledTasks = [], isLoading: loadingSched } = useQuery({
-    queryKey: ['scheduledTasks'],
-    queryFn: () => ScheduledTaskService.list(),
-  });
+  const { data: scheduledTasks = [], isLoading: loadingSched } = useQuery(scheduledTasksQuery());
+  const { data: occasionalTasks = [], isLoading: loadingOcc } = useQuery(occasionalTasksQuery());
 
-  const { data: occasionalTasks = [], isLoading: loadingOcc } = useQuery({
-    queryKey: ['occasionalTasks'],
-    queryFn: () => OccasionalTaskService.list('-date', 500),
-  });
+  // Only the selected day. This used to pull the whole table and throw away all
+  // but one date — under the same ['tasks'] key every other page fills with a
+  // shorter list, so whichever page loaded first decided how much history this
+  // one could see.
+  const { data: completedTasks = [], isLoading: loadingTasks } = useQuery(tasksByDateQuery(dateStr));
 
-  const { data: completedTasks = [], isLoading: loadingTasks } = useQuery({
-    queryKey: ['tasks'],
-    queryFn: () => TaskService.list('-created_date', 2000),
-  });
+  const { data: reminders = [], isLoading: loadingReminders } = useQuery(remindersByDateQuery(dateStr));
+  const { data: delegations = [], isLoading: loadingDelegations } = useQuery(delegationsQuery());
+  const { data: extensions = [], isLoading: loadingExtensions } = useQuery(extensionsByDateQuery(dateStr));
+  const { data: cancellations = [], isLoading: loadingCancellations } = useQuery(cancellationsByDateQuery(dateStr));
 
-  const { data: reminders = [], isLoading: loadingReminders } = useQuery({
-    queryKey: ['taskReminders', dateStr],
-    queryFn: () => TaskReminderService.getByDate(dateStr),
-  });
-
-  const { data: delegations = [], isLoading: loadingDelegations } = useQuery({
-    queryKey: ['taskDelegations'],
-    queryFn: () => TaskDelegationService.list('-created_at'),
-  });
-
-  const { data: extensions = [], isLoading: loadingExtensions } = useQuery({
-    queryKey: ['taskExtensions', dateStr],
-    queryFn: () => TaskExtensionService.getByDate(dateStr),
-  });
-
-  const { data: cancellations = [], isLoading: loadingCancellations } = useQuery({
-    queryKey: ['taskCancellations', dateStr],
-    queryFn: () => TaskCancellationService.getByDate(dateStr),
-  });
-
-  const todayDelegations = delegations.filter(d => d.task_date === dateStr);
+  const todayDelegations = useMemo(
+    () => delegations.filter(d => d.task_date === dateStr),
+    [delegations, dateStr],
+  );
 
   const extendTaskMutation = useMutation({
     mutationFn: ({ person, taskName, endTime, withReminder }) =>
@@ -107,7 +101,7 @@ export default function Tarefas() {
         granted_by: session?.user?.id,
       }),
     onSuccess: async (_, { person, taskName, endTime, withReminder }) => {
-      queryClient.invalidateQueries({ queryKey: ['taskExtensions', dateStr] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.extensions });
       if (withReminder) {
         try {
           await sendTaskReminder({
@@ -118,7 +112,7 @@ export default function Tarefas() {
             taskDate: dateStr,
             sentBy: session?.user?.id,
           });
-          queryClient.invalidateQueries({ queryKey: ['taskReminders', dateStr] });
+          queryClient.invalidateQueries({ queryKey: INVALIDATE.reminders });
         } catch (_) {
           // reminder already sent — that's fine
         }
@@ -136,16 +130,18 @@ export default function Tarefas() {
   });
 
   const cancelTaskMutation = useMutation({
-    mutationFn: ({ person, taskName, endTime }) =>
+    mutationFn: ({ person, taskName, endTime, source }) =>
       TaskCancellationService.create({
         person,
         task_name: taskName,
         task_date: dateStr,
         end_time: endTime ?? null,
         cancelled_by: session?.user?.id,
+        // Waives this occurrence only — not every same-named task at that hour.
+        ...slotColumns(source),
       }),
     onSuccess: (_, { person, taskName }) => {
-      queryClient.invalidateQueries({ queryKey: ['taskCancellations', dateStr] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.cancellations });
       toast.success(`Tarefa "${taskName}" cancelada para ${person}`);
       setSelectedTask(null);
     },
@@ -161,7 +157,7 @@ export default function Tarefas() {
   const uncancelTaskMutation = useMutation({
     mutationFn: ({ id }) => TaskCancellationService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['taskCancellations', dateStr] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.cancellations });
       toast.success('Cancelamento removido');
       setSelectedTask(null);
     },
@@ -179,7 +175,7 @@ export default function Tarefas() {
         sentBy: session?.user?.id,
       }),
     onSuccess: (_, { person, taskName }) => {
-      queryClient.invalidateQueries({ queryKey: ['taskReminders', dateStr] });
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.reminders });
       toast.success(`Lembrete enviado para ${person}!`);
       setSelectedTask(null);
     },
@@ -214,7 +210,7 @@ export default function Tarefas() {
             d => d.task_type === 'scheduled' && d.scheduled_task_id === t.id && d.from_person === person
           );
           const extension = extensions.find(e => e.person === person && e.task_name === t.task_name && sameTaskSlot(e.end_time, t.end_time));
-          const cancellation = cancellations.find(c => c.person === person && c.task_name === t.task_name && sameTaskSlot(c.end_time, t.end_time));
+          const cancellation = cancellations.find(c => c.person === person && settlesSlot(c, scheduledOccurrence(t)));
           const overdue = isOverdue(t.end_time, dateStr);
           return {
             ...t,
@@ -237,7 +233,7 @@ export default function Tarefas() {
             d => d.task_type === 'occasional' && d.occasional_task_id === t.id && d.from_person === person
           );
           const extension = extensions.find(e => e.person === person && e.task_name === t.task_name && sameTaskSlot(e.end_time, t.end_time));
-          const cancellation = cancellations.find(c => c.person === person && c.task_name === t.task_name && sameTaskSlot(c.end_time, t.end_time));
+          const cancellation = cancellations.find(c => c.person === person && settlesSlot(c, occasionalOccurrence(t)));
           const overdue = isOverdue(t.end_time, dateStr);
           return {
             ...t,
@@ -262,7 +258,7 @@ export default function Tarefas() {
           if (!originalTask) return null;
 
           const extension = extensions.find(e => e.person === person && e.task_name === d.task_name && sameTaskSlot(e.end_time, originalTask.end_time));
-          const cancellation = cancellations.find(c => c.person === person && c.task_name === d.task_name && sameTaskSlot(c.end_time, originalTask.end_time));
+          const cancellation = cancellations.find(c => c.person === person && settlesSlot(c, delegationOccurrence(d, originalTask.end_time)));
           const overdue = isOverdue(originalTask.end_time, dateStr);
 
           return {
@@ -613,6 +609,7 @@ export default function Tarefas() {
                           person: selectedTask.person,
                           taskName: selectedTask.task_name,
                           endTime: selectedTask.end_time,
+                          source: occurrenceSource(selectedTask),
                         })
                       }
                       className="w-full py-3 rounded-2xl bg-destructive/10 text-destructive font-bold text-sm disabled:opacity-40 flex items-center justify-center gap-2"

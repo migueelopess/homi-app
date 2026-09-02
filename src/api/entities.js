@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { sameTaskSlot } from '@/lib/taskHelpers';
+import { settlesSlot, occurrenceOf } from '@/lib/taskHelpers';
 
 // Helper to parse Base44-style sort field: '-created_date' → { column: 'created_date', ascending: false }
 function parseSort(sortField) {
@@ -38,9 +38,21 @@ export const TaskService = {
   async listByDateRange(fromDate, toDate) {
     const { data, error } = await supabase
       .from('tasks')
-      .select('id, person, task_name, date, end_time, completion_type, approval_status, penalty_applied_at, failure_weight, scheduled_task_id, occasional_task_id, delegation_id')
+      .select('id, person, task_name, date, end_time, completion_type, approval_status, penalty_applied_at, failure_weight, scheduled_task_id, occasional_task_id, delegation_id, week_key, month_key, value')
       .gte('date', fromDate)
       .lte('date', toDate);
+    if (error) throw error;
+    return data ?? [];
+  },
+
+  // Everything recorded on one calendar day. The Tarefas page only ever looks
+  // at a single date, and asking for the whole table to then throw away all but
+  // one day was both slow and unsafe: a capped list silently hides older days.
+  async listByDate(date) {
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('date', date);
     if (error) throw error;
     return data ?? [];
   },
@@ -169,7 +181,7 @@ export const TaskService = {
   async applyPenalty(person, parentId) {
     const { data: pending, error: selErr } = await supabase
       .from('tasks')
-      .select('id, task_name, date, end_time, failure_weight')
+      .select('id, task_name, date, end_time, failure_weight, scheduled_task_id, occasional_task_id, delegation_id')
       .eq('person', person)
       .eq('completion_type', 'not_done')
       .is('penalty_applied_at', null)
@@ -182,14 +194,12 @@ export const TaskService = {
     // never be consumed as a failure, even if a not_done row exists for it.
     const { data: cancels, error: cancelErr } = await supabase
       .from('task_cancellations')
-      .select('task_name, task_date, end_time')
+      .select('task_name, task_date, end_time, scheduled_task_id, occasional_task_id, delegation_id')
       .eq('person', person);
     if (cancelErr) throw cancelErr;
 
     const notWaived = pending.filter(t => !(cancels || []).some(c =>
-      c.task_name === t.task_name &&
-      c.task_date === t.date &&
-      sameTaskSlot(c.end_time, t.end_time)
+      c.task_date === t.date && settlesSlot(c, occurrenceOf(t))
     ));
 
     // Take oldest-first until the accumulated weight reaches 3. The row that

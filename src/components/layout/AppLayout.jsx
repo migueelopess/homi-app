@@ -1,15 +1,19 @@
-import { Suspense } from 'react';
+import { Suspense, useMemo } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { Home, PlusCircle, Trophy, CalendarDays, BarChart2, Bell, ClipboardList, Handshake } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
-import { TaskService, ScheduledTaskService, OccasionalTaskService, TaskDelegationService, TaskCancellationService } from '@/api/entities';
+import {
+  tasksQuery, scheduledTasksQuery, occasionalTasksQuery,
+  delegationsQuery, cancellationsQuery,
+} from '@/lib/queries';
 import { PERSON_AVATARS, getLocalDateStr } from '@/lib/taskHelpers';
 import { useQuery } from '@tanstack/react-query';
 import NotificationBell from '@/components/notifications/NotificationBell';
 import HomiMark from '@/components/layout/HomiMark';
 import { PageSkeleton } from '@/components/layout/PageSkeleton';
 import PullToRefresh from '@/components/layout/PullToRefresh';
+import ErrorBoundary from '@/components/layout/ErrorBoundary';
 import { useFullRefresh } from '@/lib/useFullRefresh';
 import { usePushSubscription } from '@/lib/usePushSubscription';
 
@@ -21,38 +25,19 @@ export default function AppLayout() {
   const { pushSupported, pushSubscribed, subscribe: pushSubscribe } = usePushSubscription(user);
   const fullRefresh = useFullRefresh();
 
-  const { data: scheduledTasks = [] } = useQuery({
-    queryKey: ['scheduledTasks'],
-    queryFn: () => ScheduledTaskService.list(),
-    enabled: !userIsParent && !!person,
-  });
+  const isChild = !userIsParent && !!person;
 
-  const { data: tasks = [] } = useQuery({
-    queryKey: ['tasks'],
-    queryFn: () => TaskService.list('-created_date', 500),
-    enabled: !userIsParent && !!person,
-  });
-
-  const { data: occasionalTasks = [] } = useQuery({
-    queryKey: ['occasionalTasks'],
-    queryFn: () => OccasionalTaskService.list('-date', 200),
-    enabled: !userIsParent && !!person,
-  });
+  const { data: scheduledTasks = [] } = useQuery({ ...scheduledTasksQuery(), enabled: isChild });
+  const { data: tasks = [] } = useQuery({ ...tasksQuery(), enabled: isChild });
+  const { data: occasionalTasks = [] } = useQuery({ ...occasionalTasksQuery(), enabled: isChild });
+  const { data: delegations = [] } = useQuery({ ...delegationsQuery(), enabled: isChild });
+  const { data: cancellations = [] } = useQuery({ ...cancellationsQuery(), enabled: isChild });
 
   const today = getLocalDateStr();
-  const todayTasks = tasks.filter(t => t.date === today && t.person === person);
-
-  const { data: delegations = [] } = useQuery({
-    queryKey: ['taskDelegations'],
-    queryFn: () => TaskDelegationService.list('-created_at'),
-    enabled: !userIsParent && !!person,
-  });
-
-  const { data: cancellations = [] } = useQuery({
-    queryKey: ['taskCancellations', 'all'],
-    queryFn: () => TaskCancellationService.list(),
-    enabled: !userIsParent && !!person,
-  });
+  const todayTasks = useMemo(
+    () => tasks.filter(t => t.date === today && t.person === person),
+    [tasks, today, person],
+  );
 
   const pendingIncomingCount = delegations.filter(
     d => d.status === 'pending' && d.from_person !== person && d.task_date >= today
@@ -128,9 +113,13 @@ export default function AppLayout() {
       <PullToRefresh onRefresh={fullRefresh}>
         <div className="flex-1 pb-28">
           <Suspense fallback={<PageSkeleton />}>
-            <div key={location.pathname} className="animate-page-in">
-              <Outlet />
-            </div>
+            {/* Inside the layout, so a crashed page still leaves the header and
+                the bottom nav usable to navigate away from it. */}
+            <ErrorBoundary resetKey={location.pathname}>
+              <div key={location.pathname} className="animate-page-in">
+                <Outlet />
+              </div>
+            </ErrorBoundary>
           </Suspense>
         </div>
       </PullToRefresh>

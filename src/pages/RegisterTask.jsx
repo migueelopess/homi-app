@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { CheckCircle2, Camera, Loader2, Lock, Plus } from 'lucide-react';
-import { COMPLETION_TYPES, PERSON_AVATARS, getTaskValue, getWeekKey, getCurrentMonthKey, getLocalDateStr } from '@/lib/taskHelpers';
+import { COMPLETION_TYPES, PERSON_AVATARS, getTaskValue, getLocalDateStr, completionMoment } from '@/lib/taskHelpers';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import TaskGrid from '@/components/register/TaskGrid';
 import { PageSkeleton } from '@/components/layout/PageSkeleton';
@@ -42,7 +42,12 @@ export default function RegisterTask() {
   const reminders = allReminders.filter(r => r.person === person);
 
   const createMutation = useMutation({
-    mutationFn: async ({ name, file }) => {
+    mutationFn: async ({ name, file, capturedAt }) => {
+      // Dated by the photo, not by the upload: a slow link can carry the write
+      // past midnight and file the chore under the wrong day (and the wrong
+      // week, so it lands outside the week whose bonus it should count for).
+      const moment = completionMoment(capturedAt ?? new Date());
+
       const photo_url = await uploadTaskPhoto(file, setStage);
       // Auto-derive completion type: these ad-hoc tasks have no time window, so
       // they're always "on time" — reduced only if a parent nagged about it today.
@@ -54,11 +59,11 @@ export default function RegisterTask() {
         task_name: name,
         completion_type,
         value: getTaskValue(name, completion_type),
-        date: today,
         end_time: null,
-        week_key: getWeekKey(new Date()),
-        month_key: getCurrentMonthKey(),
+        ...moment,
         photo_url,
+        // No occurrence id at all: an ad-hoc chore matches no schedule, and must
+        // never tick one off.
       });
 
       // Notify parents that a task is waiting for their approval.
@@ -67,7 +72,7 @@ export default function RegisterTask() {
         title: '📸 Tarefa para aprovar',
         body: `${person} fez "${name}"`,
         url: '/pais',
-        tag: `task-submitted-${person}-${name}-${today}`,
+        tag: `task-submitted-${person}-${name}-${moment.date}`,
       });
 
       return { name, completion_type };
@@ -125,7 +130,7 @@ export default function RegisterTask() {
       setTaskName('');
       return;
     }
-    lastAttemptRef.current = { name, file };
+    lastAttemptRef.current = { name, file, capturedAt: new Date() };
     createMutation.mutate(lastAttemptRef.current);
   };
 

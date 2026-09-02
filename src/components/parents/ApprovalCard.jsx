@@ -15,6 +15,9 @@ export default function ApprovalCard({ task, onApprove, onReject, onRequestRevis
 
   const [revising, setRevising] = useState(false);
   const [note, setNote] = useState('');
+  // A photo can be gone (the monthly cleanup removes old ones); show the same
+  // placeholder as a task with no photo rather than a broken image.
+  const [photoBroken, setPhotoBroken] = useState(false);
 
   const value = task.value || 0;
   const willHalve = !task.revised;            // value is only halved on the first bounce
@@ -30,7 +33,7 @@ export default function ApprovalCard({ task, onApprove, onReject, onRequestRevis
       exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
     >
       <Card className="overflow-hidden">
-        {task.photo_url ? (
+        {task.photo_url && !photoBroken ? (
           <button
             onClick={() => onPhotoClick(task.photo_url)}
             className="block w-full"
@@ -38,7 +41,12 @@ export default function ApprovalCard({ task, onApprove, onReject, onRequestRevis
             <img
               src={task.photo_url}
               alt={task.task_name}
-              className="w-full aspect-video object-cover"
+              // Lazy: the approvals list can hold a dozen photos, and loading
+              // them all at once is the slowest thing on this page.
+              loading="lazy"
+              decoding="async"
+              onError={() => setPhotoBroken(true)}
+              className="w-full aspect-video object-cover bg-muted"
             />
           </button>
         ) : (

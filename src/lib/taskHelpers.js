@@ -273,6 +273,31 @@ export function getWeekEndDate(weekKey) {
   return targetSunday;
 }
 
+// The time facts of a completion, fixed at the instant the proof photo was
+// taken rather than whenever the upload finally lands.
+//
+// On weak wifi an upload takes tens of seconds and may be retried twice. Deriving
+// these at write time meant a chore photographed at 18:58 could be filed as
+// "late" at 19:01, and one photographed at 23:59 could be filed under the next
+// day — leaving the day it actually belonged to looking like a failure, and
+// putting it in the wrong week for that week's bonus.
+export function completionMoment(at = new Date()) {
+  return {
+    date: getLocalDateStr(at),
+    week_key: getWeekKey(at),
+    month_key: `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}`,
+  };
+}
+
+// Was the chore done before its deadline? `at` is the photo's instant.
+export function isWithinDeadline(endTime, at = new Date()) {
+  if (!endTime) return true;
+  const [h, m] = endTime.split(':').map(Number);
+  const deadline = new Date(at);
+  deadline.setHours(h, m, 0, 0);
+  return at <= deadline;
+}
+
 export function getCurrentMonthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;

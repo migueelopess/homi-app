@@ -15,9 +15,16 @@ npm run preview    # preview production build
 npm run lint       # ESLint (quiet)
 npm run lint:fix   # ESLint --fix
 npm run typecheck  # tsc checkJs via jsconfig.json
+npm test           # logic checks (plain node, no framework)
 ```
 
-There is no test suite. Verify changes by running `npm run dev` / `npm run build` and exercising the flow.
+`npm test` covers the rules that decide money and punishment — which occurrence
+a photo settles, when a chore counts as on time, which day and week it belongs
+to — plus two structural invariants: no page may declare its own read query key
+(they live in [src/lib/queries.js](src/lib/queries.js)), and every cache
+invalidation must go through a shared prefix. There is no component or
+integration testing; verify UI changes by running `npm run dev` and exercising
+the flow.
 
 ## Environment
 

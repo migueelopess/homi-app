@@ -8,11 +8,14 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   <App />
 )
 
-// Fade out the splash screen (index.html) once React is up. Keep it visible
-// for at least ~1.1s from page load so the logo animation has time to play.
+// Fade out the splash screen (index.html) once React is up. Held only until the
+// intro animation finishes — the mark pops over 0.65s and the wordmark settles
+// at 0.85s, so anything beyond that is the app making a warm start wait for
+// nothing. The fade itself sets pointer-events:none straight away, so the app
+// is already tappable while it clears.
 const splash = document.getElementById('splash')
 if (splash) {
-  const MIN_SPLASH_MS = 1100
+  const MIN_SPLASH_MS = 850
   const delay = Math.max(0, MIN_SPLASH_MS - performance.now())
   setTimeout(() => {
     splash.classList.add('splash-hide')

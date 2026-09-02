@@ -5,21 +5,9 @@ import { TaskService, OccasionalTaskService } from '@/api/entities';
 import { remindersByDateQuery, INVALIDATE } from '@/lib/queries';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { uploadTaskPhoto } from '@/api/storage';
-import { COMPLETION_TYPES, getTaskValue, getWeekKey, getCurrentMonthKey, getLocalDateStr, sameTaskSlot, slotColumns } from '@/lib/taskHelpers';
+import { COMPLETION_TYPES, getTaskValue, getLocalDateStr, sameTaskSlot, slotColumns, completionMoment, isWithinDeadline } from '@/lib/taskHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Loader2, RefreshCw, WifiOff } from 'lucide-react';
-
-// Judged against the moment the photo was taken, not the moment the upload
-// finally lands. On weak wifi an upload can take half a minute or need two
-// retries, and a child who photographed the job at 18:58 must not be marked
-// late because the phone only got the bytes out at 19:01.
-function isWithinTimeWindow(endTime, at) {
-  if (!endTime) return true;
-  const [eh, em] = endTime.split(':').map(Number);
-  const end = new Date(at);
-  end.setHours(eh, em, 0, 0);
-  return at <= end;
-}
 
 // Value of a completed task. An occasional task carries its own explicit
 // reward (halved with a reminder, quartered when late) and that always wins;
@@ -76,12 +64,19 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
 
   const createMutation = useMutation({
     mutationFn: async ({ task, file, capturedAt }) => {
+      // Everything about *when* the chore was done is fixed at the photo, not
+      // at the upload. A slow link can push the write past midnight, which
+      // would file the task under the wrong day — and leave the day it
+      // actually belonged to looking like a failure.
+      const doneAt = capturedAt ?? new Date();
+      const moment = completionMoment(doneAt);
+
       const photo_url = await uploadTaskPhoto(file, setStage);
 
       const hasReminder = reminders.some(
         r => r.task_name === task.task_name && sameTaskSlot(r.end_time, task.end_time)
       );
-      const inTime = task._isExtended || isWithinTimeWindow(task.end_time, capturedAt ?? new Date());
+      const inTime = task._isExtended || isWithinDeadline(task.end_time, doneAt);
       const completion_type = inTime
         ? (hasReminder ? 'on_time_with_reminder' : 'on_time_no_reminder')
         : 'late';
@@ -109,10 +104,8 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
           task_name: task.task_name,
           completion_type,
           value,
-          date: today,
           end_time: task.end_time ?? null,
-          week_key: getWeekKey(new Date()),
-          month_key: getCurrentMonthKey(),
+          ...moment,
           photo_url,
           ...source,
         }),
@@ -128,7 +121,7 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
         title: '📸 Tarefa para aprovar',
         body: `${person} fez "${task.task_name}"`,
         url: '/pais',
-        tag: `task-submitted-${person}-${task.task_name}-${today}`,
+        tag: `task-submitted-${person}-${task.task_name}-${moment.date}`,
       });
 
       return { completion_type, value, occasionalTaskId };

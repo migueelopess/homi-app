@@ -8,6 +8,18 @@ const RESISTANCE = 0.5; // finger travel → pull distance
 // Pull down from the top to refresh, like a native app: the page follows the
 // finger, and while it refreshes the content blurs behind a centred spinner.
 //
+// An overlay is anything sitting in a fixed-position box: the camera/upload
+// screen, a bottom sheet, a dialog. Pulling inside one must not refresh — a
+// refresh clears caches and can reload the app, and a child swiping out of
+// impatience while their photo is still uploading would lose the submission.
+function startedInsideOverlay(target) {
+  let el = target instanceof Element ? target : null;
+  for (let depth = 0; el && depth < 12; depth++, el = el.parentElement) {
+    if (getComputedStyle(el).position === 'fixed') return true;
+  }
+  return false;
+}
+
 // Note on `transform`/`filter`: both make an element a containing block, which
 // traps `position: fixed` descendants inside its box. Every overlay in the app
 // is portaled to <body> so it escapes this wrapper — and when idle we set them
@@ -38,6 +50,7 @@ export default function PullToRefresh({ onRefresh, children }) {
       if (refreshingRef.current || e.touches.length !== 1) return;
       // Only arm the gesture when already at the very top of the page.
       if (window.scrollY > 0) return;
+      if (startedInsideOverlay(e.target)) return;
       startYRef.current = e.touches[0].clientY;
       pullingRef.current = false;
     };

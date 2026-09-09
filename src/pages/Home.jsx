@@ -81,12 +81,10 @@ export default function Home() {
     [tasks, userIsParent, person],
   );
 
-  // No cached data is passed in on purpose — the hook reads its own
-  // authoritative snapshot from the DB before deciding anything.
-  useMarkMissedTasks({
-    person: userIsParent ? null : person,
-    enabled: !userIsParent && !!person,
-  });
+  // Nudges the server-side check. Parents included on purpose: opening the app
+  // is exactly when they want the failure counts to be current, and they should
+  // not have to wait for a child to launch Homi for that to happen.
+  useMarkMissedTasks({ enabled: !!user });
 
   // These two write bonus rows (and delete ones that are no longer deserved),
   // so they must never run off a restored cache — `isFetchedAfterMount` means

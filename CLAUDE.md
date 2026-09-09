@@ -57,6 +57,31 @@ Edge functions are in `supabase/functions/`; schema changes as ordered SQL in `s
 npx supabase functions deploy <name>   # deploy one edge function
 ```
 
+Three functions run on `pg_cron` (jobs live in `cron.job`):
+
+| Function | Schedule | What it does |
+| --- | --- | --- |
+| `check-task-reminders` | `*/5 * * * *` | 30/15-minute and deadline push notifications |
+| `mark-missed-tasks` | `10 * * * *` | records undone scheduled tasks as `not_done` |
+| `daily-approval-summary` | `0 21,22 * * *` | nudges parents about tasks still awaiting approval |
+
+`mark-missed-tasks` owns the rule that decides failures and punishments; the
+browser only nudges it (see [src/lib/useMarkMissedTasks.js](src/lib/useMarkMissedTasks.js))
+and never writes a failure itself. It is idempotent — a per-child checkpoint in
+`missed_check_log` plus a unique index on the occurrence — so extra runs cost a
+single query. Call it with `{"dry_run": true}` to see exactly what it would
+write without touching anything; always do that before running it after a
+schedule or data change.
+
+Jobs are scheduled by copying an existing job's command so the service-role key
+never has to be handled by hand:
+
+```sql
+select cron.schedule('<new-job>', '<schedule>',
+  replace(command, 'check-task-reminders', '<new-job>'))
+from cron.job where jobname = 'check-task-reminders';
+```
+
 ## Deploy
 
 Push to `main` → Vercel auto-deploys (project `smores-2-0`, https://homitasks.vercel.app). `vercel.json` rewrites all routes to `/index.html` (SPA). Only commit/push when the user asks.

@@ -62,8 +62,14 @@ Three functions run on `pg_cron` (jobs live in `cron.job`):
 | Function | Schedule | What it does |
 | --- | --- | --- |
 | `check-task-reminders` | `*/5 * * * *` | 30/15-minute and deadline push notifications |
-| `mark-missed-tasks` | `10 * * * *` | records undone scheduled tasks as `not_done` |
+| `mark-missed-tasks` | `10 0,1,9,15 * * *` | records undone scheduled tasks as `not_done` |
 | `daily-approval-summary` | `0 21,22 * * *` | nudges parents about tasks still awaiting approval |
+| `purge-cron-history` | `20 3 * * *` | trims `cron.job_run_details` to 7 days |
+
+`purge-cron-history` is not optional. pg_cron never prunes its own run log, and
+with a job firing every five minutes it reached 48k rows / 73 MB — 83% of the
+whole database — before it was noticed. The project runs on the base (free)
+compute, so that kind of dead weight matters.
 
 `mark-missed-tasks` owns the rule that decides failures and punishments; the
 browser only nudges it (see [src/lib/useMarkMissedTasks.js](src/lib/useMarkMissedTasks.js))

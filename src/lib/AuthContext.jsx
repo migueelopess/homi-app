@@ -5,6 +5,18 @@ const AuthContext = createContext();
 
 const PROFILE_CACHE_KEY = 'homi_profile';
 
+// Nothing in the Supabase client times out on its own. When the backend stops
+// answering, the profile request never settles — `isLoadingAuth` stays true and
+// the app sits on its spinner forever with no way out but force-closing it.
+const PROFILE_TIMEOUT_MS = 12000;
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+
 // Cold-start fast path: hydrate from the cached profile so the app renders
 // immediately, then revalidate against the DB in the background. Skipped when
 // the user opted out of persistent sessions on a fresh browser start (that
@@ -67,11 +79,20 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const fetchProfile = async (userId) => {
-    const { data: profile, error } = await supabase
-      .from('profiles')
-      .select('id, role, linked_name, full_name')
-      .eq('id', userId)
-      .single();
+    let profile = null;
+    let error = null;
+    try {
+      ({ data: profile, error } = await withTimeout(
+        supabase
+          .from('profiles')
+          .select('id, role, linked_name, full_name')
+          .eq('id', userId)
+          .single(),
+        PROFILE_TIMEOUT_MS,
+      ));
+    } catch (err) {
+      error = err;
+    }
 
     if (error || !profile) {
       console.error('Failed to fetch profile:', error);

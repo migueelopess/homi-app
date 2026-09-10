@@ -13,7 +13,16 @@ export const queryClientInstance = new QueryClient({
 			refetchOnReconnect: true,
 			staleTime: 5 * 60 * 1000,
 			gcTime: 24 * 60 * 60 * 1000, // keep data around so persistence works
-			retry: 1,
+			// Ride out a short backend blip instead of surfacing an error. A 4xx
+			// is the app's own fault (bad request, no permission) and will never
+			// succeed on a second go; a 5xx, a timeout or a dead socket often
+			// will, so those get a few tries with growing gaps.
+			retry: (failureCount, error) => {
+				const status = error?.status ?? error?.originalError?.status ?? 0;
+				if (status >= 400 && status < 500 && status !== 408 && status !== 429) return false;
+				return failureCount < 3;
+			},
+			retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 8000),
 		},
 	},
 });

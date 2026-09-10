@@ -23,6 +23,49 @@ function useThemeColor(color) {
   }, [color]);
 }
 
+// How long to wait on one sign-in attempt. Supabase's client has no timeout of
+// its own, so when the backend stops answering the request simply never
+// settles: the button spins forever and the app looks frozen.
+const ATTEMPT_TIMEOUT_MS = 8000;
+const ATTEMPTS = 3;
+const BACKOFF_MS = [1500, 4000];
+// Whole-operation budget. Three attempts against a backend that hangs rather
+// than refuses would otherwise leave someone staring at a spinner for the best
+// part of a minute — which is what "the app doesn't work" actually looks like.
+const TOTAL_BUDGET_MS = 20000;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Tells a wrong password apart from a backend that is down.
+//
+// Every failure used to be reported as "Email ou password incorretos", so
+// during an outage the app confidently told the family their password was
+// wrong — sending them to reset a password that was fine all along.
+function describeAuthError(err) {
+  const status = err?.status ?? 0;
+  const message = String(err?.message || '');
+
+  if (status === 400 || status === 401 || /invalid login credentials/i.test(message)) {
+    return { text: 'Email ou password incorretos.', retryable: false };
+  }
+  if (status === 422 || /email not confirmed/i.test(message)) {
+    return { text: 'Esta conta ainda não foi confirmada.', retryable: false };
+  }
+  if (status === 429 || /rate limit/i.test(message)) {
+    return { text: 'Demasiadas tentativas. Espera um minuto e tenta outra vez.', retryable: false };
+  }
+  if (err?.name === 'TimeoutError') {
+    return { text: 'O servidor não respondeu. Tenta novamente daqui a pouco.', retryable: true };
+  }
+  if (status >= 500 || status === 0 || /fetch|network|failed to fetch/i.test(message)) {
+    return {
+      text: 'Não foi possível chegar ao servidor. Não é a tua password — tenta novamente daqui a pouco.',
+      retryable: true,
+    };
+  }
+  return { text: 'Não foi possível entrar. Tenta novamente.', retryable: true };
+}
+
 export default function Login() {
   useThemeColor('#123f3f');
 
@@ -30,25 +73,48 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [rememberMe, setRememberMe] = useState(true);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setAttempt(0);
     setLoading(true);
 
     localStorage.setItem('homi_remember', rememberMe ? '1' : '0');
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const startedAt = Date.now();
+    for (let n = 1; n <= ATTEMPTS; n++) {
+      setAttempt(n);
+      let failure;
+      try {
+        const { error: authError } = await Promise.race([
+          supabase.auth.signInWithPassword({ email, password }),
+          sleep(ATTEMPT_TIMEOUT_MS).then(() => {
+            const e = new Error('timeout');
+            e.name = 'TimeoutError';
+            throw e;
+          }),
+        ]);
+        if (!authError) return; // AuthContext's listener takes it from here
+        failure = describeAuthError(authError);
+      } catch (err) {
+        failure = describeAuthError(err);
+      }
 
-    if (authError) {
-      setError('Email ou password incorretos.');
-      setLoading(false);
+      // A wrong password will not become right on the next try; and once the
+      // budget is spent, say so rather than keep the spinner going.
+      const wait = BACKOFF_MS[n - 1] ?? 4000;
+      const outOfTime = Date.now() - startedAt + wait + ATTEMPT_TIMEOUT_MS > TOTAL_BUDGET_MS;
+      if (!failure.retryable || n === ATTEMPTS || outOfTime) {
+        setError(failure.text);
+        setAttempt(0);
+        setLoading(false);
+        return;
+      }
+      await sleep(wait);
     }
-    // On success, AuthContext's onAuthStateChange listener handles the rest
   };
 
   return (
@@ -245,7 +311,7 @@ export default function Login() {
               }}
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              Entrar
+              {loading && attempt > 1 ? `A tentar de novo (${attempt}/${ATTEMPTS})` : 'Entrar'}
             </Button>
           </form>
         </div>

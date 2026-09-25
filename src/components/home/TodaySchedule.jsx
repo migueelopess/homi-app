@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { TaskDelegationService } from '@/api/entities';
-import { delegationsQuery, extensionsByDateQuery, cancellationsByDateQuery, INVALIDATE } from '@/lib/queries';
+import { delegationsQuery, extensionsByDateQuery, cancellationsQuery, INVALIDATE } from '@/lib/queries';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { Clock, CheckCircle2, Circle, Star, ArrowRightLeft } from 'lucide-react';
 import { Card } from '@/components/ui/card';
@@ -56,12 +56,14 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
   const { data: delegations = [] } = useQuery(delegationsQuery());
   // Extensions and cancellations the parents granted for today.
   const { data: extensions = [] } = useQuery(extensionsByDateQuery(today));
-  const { data: cancellations = [] } = useQuery(cancellationsByDateQuery(today));
+  // The full list is already loaded by the Home page itself, so reading it here
+  // costs no extra request on opening the app; a per-day query did.
+  const { data: cancellations = [] } = useQuery(cancellationsQuery());
 
   // Waived for this exact occurrence. Matching by name and hour alone meant a
   // single cancellation silenced every same-named task at that time.
   const isCancelled = (occurrence) =>
-    cancellations.some(c => c.person === person && settlesSlot(c, occurrence));
+    cancellations.some(c => c.task_date === today && c.person === person && settlesSlot(c, occurrence));
 
   const todayDelegations = delegations.filter(d => d.task_date === today);
 

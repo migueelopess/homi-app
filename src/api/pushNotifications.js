@@ -4,6 +4,31 @@ import { TaskReminderService } from './entities';
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY;
 
+// The server-side check of "is this device registered, and for whom" is
+// remembered for a day. It used to run on every single app open — one more
+// query landing on the database while the page was loading, for an answer
+// that changes perhaps once a year.
+const VERIFIED_KEY = 'homi_push_verified';
+const VERIFIED_TTL_MS = 24 * 60 * 60 * 1000;
+
+function readVerified(endpoint) {
+  try {
+    const v = JSON.parse(localStorage.getItem(VERIFIED_KEY));
+    if (v && v.endpoint === endpoint && Date.now() - v.at < VERIFIED_TTL_MS) return v;
+  } catch { /* ignore */ }
+  return null;
+}
+
+function writeVerified(endpoint, person) {
+  try {
+    localStorage.setItem(VERIFIED_KEY, JSON.stringify({ endpoint, person, at: Date.now() }));
+  } catch { /* ignore */ }
+}
+
+function clearVerified() {
+  try { localStorage.removeItem(VERIFIED_KEY); } catch { /* ignore */ }
+}
+
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -91,6 +116,7 @@ export async function subscribeToPush(userId, person) {
     }
 
     console.log('[Push] Subscription saved to Supabase successfully! Row:', data);
+    writeVerified(subscriptionJson.endpoint, person);
     return { success: true };
   } catch (err) {
     console.error('[Push] Subscription failed:', err);
@@ -115,6 +141,7 @@ export async function unsubscribeFromPush() {
     if (subscription) {
       const endpoint = subscription.endpoint;
       await subscription.unsubscribe();
+      clearVerified();
 
       // Remove from Supabase
       await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
@@ -142,8 +169,12 @@ export async function getPushSubscriptionState() {
     const subscription = await registration.pushManager.getSubscription();
 
     if (!subscription) {
+      clearVerified();
       return { supported: true, subscribed: false, person: null };
     }
+
+    const cached = readVerified(subscription.endpoint);
+    if (cached) return { supported: true, subscribed: true, person: cached.person };
 
     const { data, error } = await supabase
       .from('push_subscriptions')
@@ -156,6 +187,7 @@ export async function getPushSubscriptionState() {
       return { supported: true, subscribed: false, person: null };
     }
 
+    if (data) writeVerified(subscription.endpoint, data.person ?? null);
     return { supported: true, subscribed: !!data, person: data?.person ?? null };
   } catch {
     return { supported: true, subscribed: false, person: null };

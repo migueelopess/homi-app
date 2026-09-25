@@ -1,0 +1,39 @@
+-- 023 — Only wake check-task-reminders when a deadline is near
+--
+-- The job ran every 5 minutes, 07:00-23:59 UTC: 2016 runs in a week, of which
+-- 29 sent a single notification (1.4%). Every run still cost a pg_net request,
+-- an edge-function start, several PostgREST queries and a response row for
+-- pg_net to clean up — on an instance that lives in swap, where each needless
+-- wake-up pulls memory back from disk.
+--
+-- Now it ticks every 15 minutes and calls the function only when some task is
+-- due between 14 minutes ago and 30 minutes from now (Lisbon time). That window
+-- is exactly the union of the function's three reminder windows. Backtested on
+-- the previous 7 days: all 29 moments that sent something pass the gate, and
+-- the function is called ~6x less often than even a plain 15-minute schedule.
+--
+-- Delegations need no clause of their own: a delegation's deadline is the
+-- deadline of the scheduled or occasional task it was carved out of.
+--
+-- Applied by rewriting the existing job's command, so the service-role key in
+-- it never leaves the database:
+--
+-- select cron.alter_job(jobid,
+--   schedule => '*/15 7-23 * * *',
+--   command  => regexp_replace(command, ';\s*$', '') || E'\n  WHERE ' || <gate> || ';')
+-- from cron.job where jobname = 'check-task-reminders';
+--
+-- where <gate> is:
+--
+--   exists (
+--     select 1 from public.scheduled_tasks s
+--     where to_char(now() at time zone 'Europe/Lisbon', 'FMday') = any(s.days_of_week)
+--       and (s.end_time::time - (now() at time zone 'Europe/Lisbon')::time)
+--           between interval '-14 minutes' and interval '30 minutes')
+--   or exists (
+--     select 1 from public.occasional_tasks o
+--     where o.date = (now() at time zone 'Europe/Lisbon')::date
+--       and coalesce(o.completed, false) = false
+--       and o.end_time is not null
+--       and (o.end_time::time - (now() at time zone 'Europe/Lisbon')::time)
+--           between interval '-14 minutes' and interval '30 minutes')

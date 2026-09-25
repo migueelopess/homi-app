@@ -10,17 +10,22 @@ import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persist
 // the clock. The box was living in swap, and the 19:00 rush, when most
 // deadlines fall, tipped it into 20-30 second stalls and "database timeout"s.
 //
-// Instead, whatever is on screen refreshes every minute while the app is
-// visible (never in the background), and immediately on returning to the app if
-// it is more than 30 s old. Pages still paint instantly from cache.
+// Instead:
+// - on opening or returning to the app, anything older than 2 minutes is
+//   refetched — the family opens Homi two or three times a day, so in practice
+//   that means everything is fresh on every open;
+// - while the app stays open, only what actually changes during a session —
+//   tasks (new photos, approvals) and delegations — polls every minute. Those
+//   intervals live on the queries themselves in src/lib/queries.js;
+// - nothing ever polls in the background.
+// Pages still paint instantly from the persisted cache.
 export const queryClientInstance = new QueryClient({
 	defaultOptions: {
 		queries: {
 			refetchOnWindowFocus: true,
 			refetchOnReconnect: true,
-			refetchInterval: 60 * 1000,
 			refetchIntervalInBackground: false,
-			staleTime: 30 * 1000,
+			staleTime: 2 * 60 * 1000,
 			gcTime: 24 * 60 * 60 * 1000, // keep data around so persistence works
 			// Ride out a short backend blip instead of surfacing an error. A 4xx
 			// is the app's own fault (bad request, no permission) and will never

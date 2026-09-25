@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { supabase } from '@/api/supabaseClient';
 
 const AuthContext = createContext();
@@ -38,6 +38,27 @@ export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(!!cachedProfile);
   const [isLoadingAuth, setIsLoadingAuth] = useState(!cachedProfile);
 
+  // The profile for a given user is fetched once per app session. Both the
+  // auth listener (INITIAL_SESSION) and getSession() fire on every launch, and
+  // the listener fires again on each hourly token refresh — each of those used
+  // to be its own profile request, landing on the database exactly while the
+  // page's own queries were loading. A failed attempt is not remembered, so the
+  // next event retries it.
+  const profileRef = useRef({ userId: null, promise: null });
+  const loadProfile = (userId) => {
+    if (profileRef.current.userId === userId && profileRef.current.promise) {
+      return profileRef.current.promise;
+    }
+    const promise = fetchProfile(userId).then((ok) => {
+      if (!ok && profileRef.current.promise === promise) {
+        profileRef.current = { userId: null, promise: null };
+      }
+    });
+    profileRef.current = { userId, promise };
+    return promise;
+  };
+  const forgetProfile = () => { profileRef.current = { userId: null, promise: null }; };
+
   useEffect(() => {
     // Capture BEFORE setting the flag — null means fresh browser start
     const tabWasActive = sessionStorage.getItem('homi_tab_active');
@@ -46,8 +67,9 @@ export const AuthProvider = ({ children }) => {
     // Listen for auth state changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
-        fetchProfile(session.user.id);
+        loadProfile(session.user.id);
       } else {
+        forgetProfile();
         try { localStorage.removeItem(PROFILE_CACHE_KEY); } catch { /* ignore */ }
         setUser(null);
         setIsAuthenticated(false);
@@ -64,9 +86,10 @@ export const AuthProvider = ({ children }) => {
           await supabase.auth.signOut();
           // onAuthStateChange will clean up state
         } else {
-          fetchProfile(session.user.id);
+          loadProfile(session.user.id);
         }
       } else {
+        forgetProfile();
         try { localStorage.removeItem(PROFILE_CACHE_KEY); } catch { /* ignore */ }
         setUser(null);
         setIsAuthenticated(false);
@@ -102,15 +125,18 @@ export const AuthProvider = ({ children }) => {
         if (!current) setIsAuthenticated(false);
         return current;
       });
-    } else {
-      try { localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(profile)); } catch { /* ignore */ }
-      setUser(profile);
-      setIsAuthenticated(true);
+      setIsLoadingAuth(false);
+      return false;
     }
+    try { localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(profile)); } catch { /* ignore */ }
+    setUser(profile);
+    setIsAuthenticated(true);
     setIsLoadingAuth(false);
+    return true;
   };
 
   const logout = async () => {
+    forgetProfile();
     await supabase.auth.signOut();
     try { localStorage.removeItem(PROFILE_CACHE_KEY); } catch { /* ignore */ }
     setUser(null);

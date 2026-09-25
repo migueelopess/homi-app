@@ -263,8 +263,12 @@ t('every invalidation uses a shared prefix' + detail(badInvalidations), badInval
   t('nothing subscribes to Realtime postgres_changes' + detail(subscribers), subscribers.length === 0);
 
   const qc = readFileSync(join(SRC, 'lib', 'query-client.js'), 'utf8');
-  t('queries refresh on an interval while visible',
-    /refetchInterval:\s*\d/.test(qc) && /refetchIntervalInBackground:\s*false/.test(qc));
+  const qs = readFileSync(join(SRC, 'lib', 'queries.js'), 'utf8');
+  const polled = (name) => new RegExp(`export const ${name} = [^;]*?refetchInterval: LIVE_INTERVAL_MS`, 's').test(qs);
+  t('tasks, approvals and delegations poll while the app is open',
+    ['tasksQuery', 'pendingTasksQuery', 'delegationsQuery'].every(polled));
+  t('nothing polls in the background', /refetchIntervalInBackground:\s*false/.test(qc));
+  t('nothing polls globally', !/^\s*refetchInterval:/m.test(qc));
 }
 
 console.log(`

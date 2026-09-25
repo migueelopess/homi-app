@@ -17,6 +17,11 @@ import {
 // the readers actually use. Keeping the keys here, next to each other, is what
 // makes that checkable.
 
+// What changes while someone has the app open — a sibling's photo, a parent's
+// approval, a delegation request — and so is worth polling during a session.
+// Everything else is refreshed on opening the app (see query-client.js).
+export const LIVE_INTERVAL_MS = 60 * 1000;
+
 // Comfortably more than a month of family activity, and under PostgREST's
 // default ceiling. The monthly cleanup keeps the table well inside it.
 export const TASKS_LIMIT = 1000;
@@ -24,6 +29,7 @@ export const TASKS_LIMIT = 1000;
 export const tasksQuery = () => ({
   queryKey: ['tasks'],
   queryFn: () => TaskService.list('-created_date', TASKS_LIMIT),
+  refetchInterval: LIVE_INTERVAL_MS,
 });
 
 // One calendar day. Prefixed with 'tasks' on purpose: invalidating ['tasks']
@@ -31,11 +37,13 @@ export const tasksQuery = () => ({
 export const tasksByDateQuery = (date) => ({
   queryKey: ['tasks', 'byDate', date],
   queryFn: () => TaskService.listByDate(date),
+  refetchInterval: LIVE_INTERVAL_MS,
 });
 
 export const pendingTasksQuery = () => ({
   queryKey: ['pendingTasks'],
   queryFn: () => TaskService.listPending(),
+  refetchInterval: LIVE_INTERVAL_MS,
 });
 
 export const scheduledTasksQuery = () => ({
@@ -51,6 +59,7 @@ export const occasionalTasksQuery = () => ({
 export const delegationsQuery = () => ({
   queryKey: ['taskDelegations'],
   queryFn: () => TaskDelegationService.list('-created_at'),
+  refetchInterval: LIVE_INTERVAL_MS,
 });
 
 export const cancellationsQuery = () => ({

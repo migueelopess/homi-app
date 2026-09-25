@@ -56,7 +56,7 @@ export default function Parents() {
   const deleteMutation = useMutation({
     mutationFn: async (task) => {
       await TaskService.delete(task.id);
-      // useMarkMissedTasks is self-healing: it recreates any scheduled
+      // The mark-missed-tasks edge function is self-healing: it recreates any scheduled
       // occurrence that has no record for a past day. Without a tombstone a
       // deleted task is resurrected (as not_done) the next time a child opens
       // the app. A cancellation marks the occurrence as waived, so it is

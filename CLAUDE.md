@@ -38,7 +38,7 @@ the flow.
 - **Data access:** All Supabase calls go through the service objects in [src/api/entities.js](src/api/entities.js) — `TaskService`, `ScheduledTaskService`, `OccasionalTaskService`, `TaskReminderService`, `TaskDelegationService`, `TaskExtensionService`, `TaskCancellationService`, `PaymentService`, `CleanupLogService`. Add DB access here, not inline in components.
 - **Tables:** `tasks`, `scheduled_tasks`, `occasional_tasks`, `task_reminders`, `task_delegations`, `task_extensions`, `task_cancellations`, `payments`, `cleanup_log` (+ push subscription tables).
 - **Auth:** [src/lib/AuthContext.jsx](src/lib/AuthContext.jsx) provides `AuthProvider` / `useAuth`. `App.jsx` gates routes on `isAuthenticated`.
-- **Freshness:** polling, not Realtime. Active queries refetch every 60 s while the app is visible and on returning to it (see [src/lib/query-client.js](src/lib/query-client.js)). Realtime `postgres_changes` was removed in September 2026: on the Nano instance it cost ~43% of all database time plus a logical-replication decoder, the box lived in swap, and the 19:00 deadline rush produced 20-30 s stalls and "database timeout"s. `npm test` fails if a `postgres_changes` subscription is re-added. Only bring it back together with a compute upgrade.
+- **Freshness:** polling, not Realtime. Everything refetches on opening or returning to the app if older than 2 minutes; while the app stays open only tasks, pending approvals and delegations poll, every 60 s, and nothing polls in the background (see [src/lib/query-client.js](src/lib/query-client.js) and `LIVE_INTERVAL_MS` in [src/lib/queries.js](src/lib/queries.js)). Realtime `postgres_changes` was removed in September 2026: on the Nano instance it cost ~43% of all database time plus a logical-replication decoder, the box lived in swap, and the 19:00 deadline rush produced 20-30 s stalls and "database timeout"s. `npm test` fails if a `postgres_changes` subscription is re-added. Only bring it back together with a compute upgrade.
 - **Push:** `sendPushNotification()` in [src/api/supabaseClient.js](src/api/supabaseClient.js) invokes the `send-push-notification` edge function.
 
 ## Conventions
@@ -61,15 +61,21 @@ Three functions run on `pg_cron` (jobs live in `cron.job`):
 
 | Function | Schedule | What it does |
 | --- | --- | --- |
-| `check-task-reminders` | `*/5 7-23 * * *` | 30/15-minute and deadline push notifications |
+| `check-task-reminders` | `*/15 7-23 * * *`, gated | 30/15-minute and deadline push notifications |
 | `mark-missed-tasks` | `10 0,1,9,15 * * *` | records undone scheduled tasks as `not_done` |
 | `daily-approval-summary` | `0 21,22 * * *` | nudges parents about tasks still awaiting approval |
 | `purge-cron-history` | `20 3 * * *` | trims `cron.job_run_details` to 7 days |
 | `drop-idle-realtime-slot` | `40 * * * *` | drops Realtime's wal2json slot if inactive and holding > 64 MB of WAL |
 
-`check-task-reminders` only runs 07:00-23:59 UTC, which covers deadlines from
-08:30 to 23:30 Lisbon time in both summer and winter. A task due outside that
-window gets no push reminder (the in-app one still fires while the app is open).
+`check-task-reminders` ticks every 15 minutes, 07:00-23:59 UTC (deadlines from
+08:30 to 23:30 Lisbon time, summer and winter), and the cron command only calls
+the function when some scheduled or occasional task is due between 14 minutes
+ago and 30 minutes from now — see [supabase-migrations/023_reminder_gate.sql](supabase-migrations/023_reminder_gate.sql).
+At a 5-minute, ungated cadence it ran 2016 times a week and 29 of those sent
+anything. The function's three reminder windows are each 15 minutes wide to
+match; if you change the cadence, change those windows and the gate together.
+A task due outside 08:30-23:30 gets no push reminder (the in-app one still fires
+while the app is open).
 
 `purge-cron-history` is not optional. pg_cron never prunes its own run log, and
 with a job firing every five minutes it reached 48k rows / 73 MB — 83% of the
@@ -77,8 +83,10 @@ whole database — before it was noticed. The project runs on the base (free)
 compute, so that kind of dead weight matters.
 
 `mark-missed-tasks` owns the rule that decides failures and punishments; the
-browser only nudges it (see [src/lib/useMarkMissedTasks.js](src/lib/useMarkMissedTasks.js))
-and never writes a failure itself. It is idempotent — a per-child checkpoint in
+browser never runs it and never writes a failure. (It used to be nudged on
+every app open; that was dropped because the overnight runs already have the
+counts current by morning, and the extra call landed exactly when the page's
+own queries were loading.) It is idempotent — a per-child checkpoint in
 `missed_check_log` plus a unique index on the occurrence — so extra runs cost a
 single query. Call it with `{"dry_run": true}` to see exactly what it would
 write without touching anything; always do that before running it after a

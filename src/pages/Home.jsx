@@ -12,7 +12,6 @@ import RecentActivity from '@/components/home/RecentActivity';
 import RevisionTasks from '@/components/home/RevisionTasks';
 import TodaySchedule from '@/components/home/TodaySchedule';
 import { useNotifications } from '@/lib/useNotifications';
-import { useMarkMissedTasks } from '@/lib/useMarkMissedTasks';
 import { useMaterializeBonuses } from '@/lib/useMaterializeBonuses';
 import { useMaterializeDelegationChampion } from '@/lib/useMaterializeDelegationChampion';
 import { Calendar } from 'lucide-react';
@@ -81,10 +80,6 @@ export default function Home() {
     [tasks, userIsParent, person],
   );
 
-  // Nudges the server-side check. Parents included on purpose: opening the app
-  // is exactly when they want the failure counts to be current, and they should
-  // not have to wait for a child to launch Homi for that to happen.
-  useMarkMissedTasks({ enabled: !!user });
 
   // These two write bonus rows (and delete ones that are no longer deserved),
   // so they must never run off a restored cache — `isFetchedAfterMount` means

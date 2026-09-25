@@ -14,6 +14,15 @@ webpush.setVapidDetails(
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+// Cadence. pg_cron calls this every 15 minutes, and only when a deadline is
+// actually near (the gate lives in the cron command itself — see
+// supabase-migrations/023_reminder_gate.sql). It used to run every 5 minutes
+// around the clock: 2016 runs a week, of which 29 sent anything.
+//
+// Each reminder therefore owns a 15-minute window instead of a 5-minute one —
+// 30-min: 16..30, 15-min: 1..15, deadline: -14..0 minutes before the deadline —
+// so every tick lands in exactly one of them. The sent-notification keys still
+// guarantee each reminder goes out once, even if a tick arrives late.
 const DAY_KEYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 // Same rule as the frontend's sameTaskSlot: an exact match on the deadline,
@@ -234,7 +243,7 @@ Deno.serve(async (req) => {
       // A task taken on from a sibling gets an earlier nudge: it is not part
       // of this child's own routine, so it is the one most easily forgotten —
       // and dropping it costs them double failures.
-      if (delegation && minutesUntilDeadline >= 25 && minutesUntilDeadline <= 30) {
+      if (delegation && minutesUntilDeadline >= 16 && minutesUntilDeadline <= 30) {
         const key = `delegation:${delegation.id}:${todayStr}:reminder30`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase
@@ -258,7 +267,7 @@ Deno.serve(async (req) => {
       }
 
       // 15 minutes before reminder (window: 10-15 min before)
-      if (minutesUntilDeadline >= 10 && minutesUntilDeadline <= 15) {
+      if (minutesUntilDeadline >= 1 && minutesUntilDeadline <= 15) {
         const key = `scheduled:${task.id}:${todayStr}:reminder`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase
@@ -282,7 +291,7 @@ Deno.serve(async (req) => {
       }
 
       // At deadline (window: 0-5 min after)
-      if (minutesUntilDeadline >= -5 && minutesUntilDeadline <= 0) {
+      if (minutesUntilDeadline >= -14 && minutesUntilDeadline <= 0) {
         const key = `scheduled:${task.id}:${todayStr}:deadline`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase
@@ -330,7 +339,7 @@ Deno.serve(async (req) => {
 
       // Earlier nudge for a task taken on from a sibling (see the scheduled
       // loop above for why).
-      if (delegation && minutesUntilDeadline >= 25 && minutesUntilDeadline <= 30) {
+      if (delegation && minutesUntilDeadline >= 16 && minutesUntilDeadline <= 30) {
         const key = `delegation:${delegation.id}:${todayStr}:reminder30`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase
@@ -354,7 +363,7 @@ Deno.serve(async (req) => {
       }
 
       // 15 minutes before
-      if (minutesUntilDeadline >= 10 && minutesUntilDeadline <= 15) {
+      if (minutesUntilDeadline >= 1 && minutesUntilDeadline <= 15) {
         const key = `occasional:${task.id}:${todayStr}:reminder`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase
@@ -378,7 +387,7 @@ Deno.serve(async (req) => {
       }
 
       // At deadline
-      if (minutesUntilDeadline >= -5 && minutesUntilDeadline <= 0) {
+      if (minutesUntilDeadline >= -14 && minutesUntilDeadline <= 0) {
         const key = `occasional:${task.id}:${todayStr}:deadline`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase

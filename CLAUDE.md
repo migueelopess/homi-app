@@ -65,6 +65,7 @@ Three functions run on `pg_cron` (jobs live in `cron.job`):
 | `mark-missed-tasks` | `10 0,1,9,15 * * *` | records undone scheduled tasks as `not_done` |
 | `daily-approval-summary` | `0 21,22 * * *` | nudges parents about tasks still awaiting approval |
 | `purge-cron-history` | `20 3 * * *` | trims `cron.job_run_details` to 7 days |
+| `drop-idle-realtime-slot` | `40 * * * *` | drops Realtime's wal2json slot if inactive and holding > 64 MB of WAL |
 
 `check-task-reminders` only runs 07:00-23:59 UTC, which covers deadlines from
 08:30 to 23:30 Lisbon time in both summer and winter. A task due outside that
@@ -82,6 +83,20 @@ and never writes a failure itself. It is idempotent — a per-child checkpoint i
 single query. Call it with `{"dry_run": true}` to see exactly what it would
 write without touching anything; always do that before running it after a
 schedule or data change.
+
+To check whether the instance is coping, measure `check-task-reminders`
+latency by hour — it runs all day, so it is a steady probe. A healthy hour has
+a p95 around 130 ms; before Realtime was removed, 19:00 sat at ~23 s:
+
+```sql
+select extract(hour from (r.start_time at time zone 'Europe/Lisbon'))::int as hora,
+       percentile_cont(0.95) within group
+         (order by extract(epoch from r.end_time - r.start_time) * 1000) as p95_ms,
+       count(*) filter (where r.end_time - r.start_time > interval '2 seconds') as lentas
+from cron.job_run_details r join cron.job j on j.jobid = r.jobid
+where j.jobname = 'check-task-reminders' and r.end_time is not null
+group by 1 order by 1;
+```
 
 Jobs are scheduled by copying an existing job's command so the service-role key
 never has to be handled by hand:

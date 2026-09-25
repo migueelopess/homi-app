@@ -252,14 +252,19 @@ for (const f of files) {
 }
 t('every invalidation uses a shared prefix' + detail(badInvalidations), badInvalidations.length === 0);
 
-// ---- 5. realtime covers every table the app reads ---------------------------
+// ---- 5. freshness comes from polling, not Realtime -------------------------
+// Realtime postgres_changes was removed because the free instance could not
+// carry it (see src/lib/query-client.js). Re-adding a subscription without
+// upgrading the compute brings the 19:00 "database timeout"s back, so this
+// fails loudly if one reappears.
 {
-  const sync = readFileSync(join(SRC, 'hooks', 'useRealtimeSync.js'), 'utf8');
-  const expected = ['tasks', 'scheduled_tasks', 'occasional_tasks', 'task_delegations',
-                    'task_extensions', 'task_cancellations', 'task_reminders', 'payments'];
-  const lines = sync.split(/\r?\n/).map(l => l.trim());
-  const missing = expected.filter(tbl => !lines.some(l => l.startsWith(tbl + ':')));
-  t('realtime subscribes to every table the app reads' + detail(missing), missing.length === 0);
+  const subscribers = files.filter(f => /\.on\(\s*['"]postgres_changes['"]/.test(readFileSync(f, 'utf8')))
+    .map(f => f.replace(SRC, 'src'));
+  t('nothing subscribes to Realtime postgres_changes' + detail(subscribers), subscribers.length === 0);
+
+  const qc = readFileSync(join(SRC, 'lib', 'query-client.js'), 'utf8');
+  t('queries refresh on an interval while visible',
+    /refetchInterval:\s*\d/.test(qc) && /refetchIntervalInBackground:\s*false/.test(qc));
 }
 
 console.log(`

@@ -8,7 +8,6 @@ import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
 import { ThemeProvider } from '@/lib/ThemeContext';
 import AppLayout from './components/layout/AppLayout';
-import { useRealtimeSync } from '@/hooks/useRealtimeSync';
 
 // Route-level code splitting: each page is its own chunk so the initial
 // bundle stays small. The remaining chunks are prefetched on idle below,
@@ -49,7 +48,6 @@ function usePrefetchPagesOnIdle() {
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isAuthenticated } = useAuth();
-  useRealtimeSync();
   usePrefetchPagesOnIdle();
 
   if (isLoadingAuth) {

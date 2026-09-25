@@ -34,11 +34,11 @@ the flow.
 ## Architecture
 
 - **Frontend:** React 18 + Vite 6, React Router, TanStack Query for server state.
-- **Backend:** Supabase (Postgres + Auth + Realtime + Edge Functions). Project ref `yjnyznhqheerjpqprggm`.
+- **Backend:** Supabase (Postgres + Auth + Edge Functions) on the **free plan's Nano instance — 426 MB of RAM** shared by Postgres, PostgREST, auth and storage. That is the binding constraint on everything below. Project ref `yjnyznhqheerjpqprggm`.
 - **Data access:** All Supabase calls go through the service objects in [src/api/entities.js](src/api/entities.js) — `TaskService`, `ScheduledTaskService`, `OccasionalTaskService`, `TaskReminderService`, `TaskDelegationService`, `TaskExtensionService`, `TaskCancellationService`, `PaymentService`, `CleanupLogService`. Add DB access here, not inline in components.
 - **Tables:** `tasks`, `scheduled_tasks`, `occasional_tasks`, `task_reminders`, `task_delegations`, `task_extensions`, `task_cancellations`, `payments`, `cleanup_log` (+ push subscription tables).
 - **Auth:** [src/lib/AuthContext.jsx](src/lib/AuthContext.jsx) provides `AuthProvider` / `useAuth`. `App.jsx` gates routes on `isAuthenticated`.
-- **Realtime:** [src/hooks/useRealtimeSync.js](src/hooks/useRealtimeSync.js) subscribes to `postgres_changes` and invalidates React Query caches, so mutations propagate live across devices.
+- **Freshness:** polling, not Realtime. Active queries refetch every 60 s while the app is visible and on returning to it (see [src/lib/query-client.js](src/lib/query-client.js)). Realtime `postgres_changes` was removed in September 2026: on the Nano instance it cost ~43% of all database time plus a logical-replication decoder, the box lived in swap, and the 19:00 deadline rush produced 20-30 s stalls and "database timeout"s. `npm test` fails if a `postgres_changes` subscription is re-added. Only bring it back together with a compute upgrade.
 - **Push:** `sendPushNotification()` in [src/api/supabaseClient.js](src/api/supabaseClient.js) invokes the `send-push-notification` edge function.
 
 ## Conventions
@@ -61,10 +61,14 @@ Three functions run on `pg_cron` (jobs live in `cron.job`):
 
 | Function | Schedule | What it does |
 | --- | --- | --- |
-| `check-task-reminders` | `*/5 * * * *` | 30/15-minute and deadline push notifications |
+| `check-task-reminders` | `*/5 7-23 * * *` | 30/15-minute and deadline push notifications |
 | `mark-missed-tasks` | `10 0,1,9,15 * * *` | records undone scheduled tasks as `not_done` |
 | `daily-approval-summary` | `0 21,22 * * *` | nudges parents about tasks still awaiting approval |
 | `purge-cron-history` | `20 3 * * *` | trims `cron.job_run_details` to 7 days |
+
+`check-task-reminders` only runs 07:00-23:59 UTC, which covers deadlines from
+08:30 to 23:30 Lisbon time in both summer and winter. A task due outside that
+window gets no push reminder (the in-app one still fires while the app is open).
 
 `purge-cron-history` is not optional. pg_cron never prunes its own run log, and
 with a job firing every five minutes it reached 48k rows / 73 MB — 83% of the

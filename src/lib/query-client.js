@@ -1,17 +1,26 @@
 import { QueryClient } from '@tanstack/react-query';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
-// Freshness model: Supabase Realtime (useRealtimeSync) invalidates the caches
-// the moment any row changes, and we invalidate everything when the PWA comes
-// back to the foreground. That makes an aggressive staleTime safe — pages
-// render instantly from cache and refetch in the background, instead of
-// showing a spinner on every navigation.
+// Freshness model: polling, not Realtime.
+//
+// Supabase Realtime (postgres_changes) was switched off on purpose. On the
+// free instance — 426 MB of RAM shared by Postgres, the API, auth and storage —
+// it cost a logical-replication decoder, a subscription per table per phone
+// checked against RLS on every change, and ~43% of all database time, around
+// the clock. The box was living in swap, and the 19:00 rush, when most
+// deadlines fall, tipped it into 20-30 second stalls and "database timeout"s.
+//
+// Instead, whatever is on screen refreshes every minute while the app is
+// visible (never in the background), and immediately on returning to the app if
+// it is more than 30 s old. Pages still paint instantly from cache.
 export const queryClientInstance = new QueryClient({
 	defaultOptions: {
 		queries: {
 			refetchOnWindowFocus: true,
 			refetchOnReconnect: true,
-			staleTime: 5 * 60 * 1000,
+			refetchInterval: 60 * 1000,
+			refetchIntervalInBackground: false,
+			staleTime: 30 * 1000,
 			gcTime: 24 * 60 * 60 * 1000, // keep data around so persistence works
 			// Ride out a short backend blip instead of surfacing an error. A 4xx
 			// is the app's own fault (bad request, no permission) and will never

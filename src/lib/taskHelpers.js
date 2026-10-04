@@ -316,9 +316,12 @@ export const SIDNEY_TASKS = ['Higiene Sidney', 'Passear Sidney', 'Escovar Sidney
 
 // Tasks with a fixed reward regardless of how/when they were done — as long as
 // they still count as done. e.g. "Fatura IQA" (using the company NIF on a meal)
-// is always worth €0.50, never the €1.00/€0.50 on-time tiers.
+// is always worth €0.50, never the €1.00/€0.50 on-time tiers; the two house
+// cleanings are big jobs and are paid as such.
 export const FIXED_TASK_VALUES = {
   'Fatura IQA': 0.50,
+  'Limpeza mensal': 17.50,
+  'Limpeza semanal': 6.50,
 };
 
 /**

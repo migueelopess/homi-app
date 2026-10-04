@@ -13,7 +13,7 @@ import {
   settlesSlot, scheduledOccurrence, occasionalOccurrence, delegationOccurrence,
   slotColumns, isDelegationFulfilled, sameTaskSlot, occurrenceOf,
   isTaskCancelled, isDelegationWaived, applyCancellations,
-  completionMoment, isWithinDeadline,
+  completionMoment, isWithinDeadline, getTaskValue,
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
 } from '../src/lib/taskHelpers.js';
 
@@ -151,6 +151,13 @@ t('legacy tombstone still waives (broadly, as before)',
 t('occurrenceOf reads the identity off a row',
   occurrenceOf(missedDeleg).key === 'd:uuid-1', true);
 
+
+// ===== Fixed-value tasks =====
+t('Limpeza mensal pays 17.50', getTaskValue('Limpeza mensal', 'on_time_no_reminder'), 17.5);
+t('Limpeza semanal pays 6.50', getTaskValue('Limpeza semanal', 'on_time_no_reminder'), 6.5);
+t('a rejected Limpeza mensal pays nothing', getTaskValue('Limpeza mensal', 'not_done'), 0);
+t('Fatura IQA still pays 0.50', getTaskValue('Fatura IQA', 'on_time_no_reminder'), 0.5);
+t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_reminder'), 1);
 
 // ===== The moment a chore was done =====
 // The scenario the family actually hits: photo taken in a weak-signal corner of

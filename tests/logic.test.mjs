@@ -17,6 +17,7 @@ import {
   isBonusTask, isWeeklyBonus, isBonusBlock, BONUS_TASK_NAME, DELEGATION_BONUS_TASK_NAME,
   isChore, isAdjustment, formatMoney, checkWeeklyBonus, calculateEarnings, FINE_AMOUNT, FINE_TASK_NAME,
   DELEGATION_CHAMPION_BONUS, completionTypeFor,
+  isDelegationOpen, minutesLeftToAccept, delegationNeedsParents, DELEGATION_STATUS,
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
 } from '../src/lib/taskHelpers.js';
 
@@ -187,6 +188,31 @@ t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_
     completionTypeFor({ endTime: '19:00', at, extended: true }), 'on_time_no_reminder');
   t('my own task before its deadline is on time',
     completionTypeFor({ endTime: '19:00', at: new Date(2026, 9, 12, 18, 50) }), 'on_time_no_reminder');
+}
+
+// ===== Delegation requests: one hour to accept, then the parents decide =====
+{
+  const created = new Date(2026, 9, 12, 18, 0);
+  const req = { id: 'r1', status: 'pending', created_at: created.toISOString(), from_person: 'Miguel',
+                task_type: 'scheduled', scheduled_task_id: 9, task_name: 'Maquina', task_date: '2026-10-12', end_time: '19:00' };
+  const at = (h, m) => new Date(2026, 9, 12, h, m);
+
+  t('a request can be accepted inside the hour', isDelegationOpen(req, at(18, 59)));
+  t('a request cannot be accepted after the hour', isDelegationOpen(req, at(19, 0)), false);
+  t('an accepted request is no longer open', isDelegationOpen({ ...req, status: 'accepted' }, at(18, 10)), false);
+  t('minutes left are rounded up', minutesLeftToAccept(req, at(18, 20)), 40);
+  t('minutes left never go negative', minutesLeftToAccept(req, at(20, 0)), 0);
+
+  const unanswered = { ...req, status: DELEGATION_STATUS.UNANSWERED };
+  t('an unanswered request waits for the parents', delegationNeedsParents(unanswered, []));
+  t('a pending request does not (yet)', delegationNeedsParents(req, []), false);
+  t('a decided request does not', delegationNeedsParents({ ...req, status: 'parent_cancelled' }, []), false);
+  const doneItself = { person: 'Miguel', date: '2026-10-12', task_name: 'Maquina', end_time: '19:00',
+                       completion_type: 'on_time_no_reminder', scheduled_task_id: 9 };
+  t('if the child did it after all, the parents are not asked', delegationNeedsParents(unanswered, [doneItself]), false);
+  t('a sibling doing their own same-named task does not count',
+    delegationNeedsParents(unanswered, [{ ...doneItself, person: 'Pedro', scheduled_task_id: 33 }]));
+  t('a failure is not "done"', delegationNeedsParents(unanswered, [{ ...doneItself, completion_type: 'not_done' }]));
 }
 
 // ===== Delegation prize =====

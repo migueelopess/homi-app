@@ -6,7 +6,7 @@ import { sendPushNotification } from '@/api/supabaseClient';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import {
   PERSON_AVATARS, TASK_ICONS, SIDNEY_TASKS, getLocalDateStr,
-  getAcceptBlock, getDelegationReward,
+  getAcceptBlock, getDelegationReward, isDelegationOpen, minutesLeftToAccept, DELEGATION_STATUS,
   DELEGATION_CHAMPION_BONUS, BROKEN_DELEGATION_WEIGHT,
 } from '@/lib/taskHelpers';
 import { Lock, Handshake, Clock, Inbox, Send, CheckCircle2, Trophy, ShieldAlert, AlertTriangle } from 'lucide-react';
@@ -19,6 +19,32 @@ import { pt } from 'date-fns/locale';
 import { PageSkeleton } from '@/components/layout/PageSkeleton';
 import Portal from '@/components/layout/Portal';
 import DelegationRanking from '@/components/delegations/DelegationRanking';
+
+// Where one of my own requests stands, in the child's words.
+function MyRequestStatus({ delegation: d }) {
+  switch (d.status) {
+    case DELEGATION_STATUS.PENDING:
+      return isDelegationOpen(d) ? (
+        <Badge variant="outline" className="text-[10px] whitespace-nowrap">⏳ {minutesLeftToAccept(d)} min</Badge>
+      ) : (
+        <Badge variant="outline" className="text-[10px] whitespace-nowrap">A fechar…</Badge>
+      );
+    case DELEGATION_STATUS.ACCEPTED:
+      return (
+        <Badge className="bg-green-500/15 text-green-600 border-0 text-[10px] whitespace-nowrap">
+          {PERSON_AVATARS[d.to_person]} {d.to_person} ✅
+        </Badge>
+      );
+    case DELEGATION_STATUS.UNANSWERED:
+      return <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-300 border-0 text-[10px] text-right">Ninguém aceitou · pais a decidir</Badge>;
+    case DELEGATION_STATUS.PARENT_CANCELLED:
+      return <Badge className="bg-green-500/15 text-green-600 border-0 text-[10px] text-right">Pais cancelaram ✅</Badge>;
+    case DELEGATION_STATUS.PARENT_REJECTED:
+      return <Badge className="bg-red-500/15 text-red-600 dark:text-red-400 border-0 text-[10px] text-right">Pais: tens de fazer</Badge>;
+    default:
+      return <Badge variant="secondary" className="text-[10px]">Expirado</Badge>;
+  }
+}
 
 export default function Delegar() {
   const { data: user, isLoading: loadingUser } = useCurrentUser();
@@ -56,7 +82,7 @@ export default function Delegar() {
     },
     onError: (err) => {
       if (err?.code === 'PGRST116') {
-        toast.error('Este pedido já foi aceite por outra pessoa.');
+        toast.error('Este pedido já não está disponível — foi aceite por outra pessoa ou passou a hora.');
       } else {
         toast.error('Erro ao aceitar o pedido.');
       }
@@ -89,9 +115,9 @@ export default function Delegar() {
     );
   }
 
-  // Incoming requests: pending delegations from siblings (not from me)
+  // Incoming requests: siblings' requests still inside their one-hour window
   const incomingRequests = delegations.filter(
-    d => d.status === 'pending' && d.from_person !== person && d.task_date >= today
+    d => isDelegationOpen(d) && d.from_person !== person && d.task_date >= today
   );
 
   // My outgoing requests (today and recent)
@@ -190,6 +216,9 @@ export default function Delegar() {
                           </span>
                         )}
                       </div>
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium mt-0.5">
+                        ⏱️ Faltam {minutesLeftToAccept(d)} min para aceitar
+                      </p>
                     </div>
                     <button
                       disabled={acceptMutation.isPending || acceptBlock.blocked}
@@ -277,15 +306,7 @@ export default function Delegar() {
                         </div>
                       )}
                     </div>
-                    {d.status === 'pending' ? (
-                      <Badge variant="outline" className="text-[10px]">Pendente ⏳</Badge>
-                    ) : d.status === 'accepted' ? (
-                      <Badge className="bg-green-500/15 text-green-600 border-0 text-[10px]">
-                        {PERSON_AVATARS[d.to_person]} {d.to_person} ✅
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="text-[10px]">Expirado</Badge>
-                    )}
+                    <MyRequestStatus delegation={d} />
                   </div>
                 </Card>
               </motion.div>
@@ -326,7 +347,7 @@ export default function Delegar() {
                 <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/10 border border-primary/30 mb-2">
                   <span className="text-lg">💰</span>
                   <p className="text-sm text-foreground leading-snug">
-                    Ganhas <strong className="text-primary">€{getDelegationReward(confirmAccept).toFixed(2)}</strong> se a fizeres a tempo.
+                    Ganhas <strong className="text-primary">€{getDelegationReward(confirmAccept).toFixed(2)}</strong> se a fizeres hoje.
                     {SIDNEY_TASKS.includes(confirmAccept.task_name) && (
                       <span className="text-muted-foreground"> As tarefas do Sidney só pagam quando ajudas um irmão 🐶</span>
                     )}

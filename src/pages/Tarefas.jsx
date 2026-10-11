@@ -399,9 +399,13 @@ export default function Tarefas() {
                         <ArrowRightLeft className="w-3 h-3" />
                         {task._delegation._isReceived
                           ? `← ${task._delegation.from_person}`
-                          : task._delegation.status === 'accepted'
-                            ? `→ ${task._delegation.to_person}`
-                            : 'Pendente'}
+                          : {
+                              accepted: `→ ${task._delegation.to_person}`,
+                              pending: 'Pedido aberto',
+                              unanswered: 'Ninguém aceitou',
+                              parent_cancelled: 'Cancelada',
+                              parent_rejected: 'Tem de fazer',
+                            }[task._delegation.status] || 'Expirado'}
                       </Badge>
                     )}
 

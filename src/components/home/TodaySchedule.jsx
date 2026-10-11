@@ -46,6 +46,25 @@ function isActive(startTime, endTime) {
   return now <= end;
 }
 
+// What became of a request I made for one of my own tasks, once it is back
+// on my list (only unanswered / decided requests get here — pending and
+// accepted ones keep the task off my list altogether).
+function RequestOutcome({ request }) {
+  if (!request) return null;
+  const text = {
+    unanswered: '🙋 Ninguém aceitou a tempo — os pais vão decidir',
+    parent_rejected: '👀 Os pais acham que consegues — é tua para fazer',
+  }[request.status];
+  if (!text) return null;
+  return (
+    <p className={`text-[11px] font-medium mt-0.5 ${
+      request.status === 'parent_rejected' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'
+    }`}>
+      {text}
+    </p>
+  );
+}
+
 export default function TodaySchedule({ scheduledTasks, todayTasks, person, occasionalTasks = [] }) {
   const captureRef = useRef(null);
   const [delegateConfirm, setDelegateConfirm] = useState(null);
@@ -67,9 +86,19 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
 
   const todayDelegations = delegations.filter(d => d.task_date === today);
 
-  // Tasks I delegated away (pending or accepted) — hide from my schedule
+  // Tasks I delegated away and that are out of my hands for now — a sibling
+  // took them, or the request is still open — are hidden from my schedule.
+  // Once nobody accepts in time the task comes back to me, flagged.
   const myDelegatedAway = todayDelegations.filter(
     d => d.from_person === person && (d.status === 'pending' || d.status === 'accepted')
+  );
+
+  // My own request for this occurrence, if I made one today. A task can only
+  // be delegated once a day (unique in the database), so once a request exists
+  // the "delegate" button goes and its outcome is shown instead.
+  const myRequestFor = (type, id) => todayDelegations.find(d =>
+    d.from_person === person && d.task_type === type &&
+    (type === 'scheduled' ? d.scheduled_task_id === id : d.occasional_task_id === id)
   );
 
   // Tasks delegated TO me and accepted — show in my schedule
@@ -129,7 +158,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
         sendPushNotification({
           person: sibling,
           title: '📥 Pedido de ajuda!',
-          body: `${person} precisa de ajuda com: ${taskName}`,
+          body: `${person} precisa de ajuda com: ${taskName}. Tens 1 hora para aceitar.`,
           url: '/delegar',
           tag: `delegation-request-${data.id}`,
         });
@@ -203,15 +232,18 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                     </div>
                   )}
                   {task.notes && <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{task.notes}</p>}
+                  <RequestOutcome request={myRequestFor('occasional', task.id)} />
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setDelegateConfirm({ taskType: 'occasional', occasionalTaskId: task.id, taskName: task.task_name, endTime: task.end_time, reward: task.reward }); }}
-                    className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                    title="Delegar tarefa"
-                  >
-                    <ArrowRightLeft className="w-3.5 h-3.5" />
-                  </button>
+                  {!myRequestFor('occasional', task.id) && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDelegateConfirm({ taskType: 'occasional', occasionalTaskId: task.id, taskName: task.task_name, endTime: task.end_time, reward: task.reward }); }}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                      title="Delegar tarefa"
+                    >
+                      <ArrowRightLeft className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                   {isExtended ? (
                     <Badge className="bg-amber-500/10 text-amber-600 border-0 text-[10px]">Extendida</Badge>
                   ) : overdue ? (
@@ -295,9 +327,10 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                       <span className="text-[11px] text-muted-foreground">Até às {task.end_time}</span>
                     </div>
                   )}
+                  {!isDone && <RequestOutcome request={myRequestFor('scheduled', task.id)} />}
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {!isDone && (
+                  {!isDone && !myRequestFor('scheduled', task.id) && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setDelegateConfirm({ taskType: 'scheduled', scheduledTaskId: task.id, taskName: task.task_name, endTime: task.end_time }); }}
                       className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"

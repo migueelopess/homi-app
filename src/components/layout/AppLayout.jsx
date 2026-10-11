@@ -7,7 +7,7 @@ import {
   tasksQuery, scheduledTasksQuery, occasionalTasksQuery,
   delegationsQuery, cancellationsQuery,
 } from '@/lib/queries';
-import { PERSON_AVATARS, getLocalDateStr } from '@/lib/taskHelpers';
+import { PERSON_AVATARS, getLocalDateStr, isDelegationOpen } from '@/lib/taskHelpers';
 import { useQuery } from '@tanstack/react-query';
 import NotificationBell from '@/components/notifications/NotificationBell';
 import HomiMark from '@/components/layout/HomiMark';
@@ -40,7 +40,7 @@ export default function AppLayout() {
   );
 
   const pendingIncomingCount = delegations.filter(
-    d => d.status === 'pending' && d.from_person !== person && d.task_date >= today
+    d => isDelegationOpen(d) && d.from_person !== person && d.task_date >= today
   ).length;
 
   const navItems = [

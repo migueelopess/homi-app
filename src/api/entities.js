@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { settlesSlot, occurrenceOf } from '@/lib/taskHelpers';
+import { settlesSlot, occurrenceOf, DELEGATION_ACCEPT_WINDOW_MINUTES } from '@/lib/taskHelpers';
 
 // Helper to parse Base44-style sort field: '-created_date' → { column: 'created_date', ascending: false }
 function parseSort(sortField) {
@@ -340,14 +340,32 @@ export const TaskDelegationService = {
   },
 
   async accept(id, toPerson) {
-    // Only accept if still pending (race condition guard)
+    // Only while still pending (another sibling may have been quicker) and
+    // inside the acceptance window. No row matched → PGRST116 from .single().
+    const opensAfter = new Date(Date.now() - DELEGATION_ACCEPT_WINDOW_MINUTES * 60 * 1000).toISOString();
     const { data, error } = await supabase
       .from('task_delegations')
       .update({ to_person: toPerson, status: 'accepted', accepted_at: new Date().toISOString() })
       .eq('id', id)
       .eq('status', 'pending')
+      .gt('created_at', opensAfter)
       .select()
       .single();
+    if (error) throw error;
+    return data;
+  },
+
+  // The parents' answer to a request nobody accepted: 'parent_cancelled' or
+  // 'parent_rejected'. Guarded on 'unanswered' so two parents deciding at once
+  // cannot both act; returns null when it was already decided.
+  async decide(id, status, deciderId) {
+    const { data, error } = await supabase
+      .from('task_delegations')
+      .update({ status, decided_at: new Date().toISOString(), decided_by: deciderId ?? null })
+      .eq('id', id)
+      .eq('status', 'unanswered')
+      .select()
+      .maybeSingle();
     if (error) throw error;
     return data;
   },

@@ -58,6 +58,69 @@ export const BONUS_COMPLETION_TYPE = 'bonus';
 export const DELEGATION_CHAMPION_BONUS = 10.00;
 export const DELEGATION_BONUS_TASK_NAME = 'Campeão das Delegações';
 
+// Lifecycle of a delegation (task_delegations.status):
+//
+//   pending ──accepted within the hour──────────▶ accepted
+//      │
+//      └─nobody accepts within the hour─────────▶ unanswered  (parents notified)
+//                                                    ├─▶ parent_cancelled  task waived, no failure
+//                                                    └─▶ parent_rejected   "you could do it": the task
+//                                                                          is the delegator's again
+//   expired — legacy, and the overnight safety net for anything still pending.
+//
+// A request no one can answer used to sit "pending" all day, and when nobody
+// took it the child who asked for help got the failure anyway. Now the window
+// is short, and an unanswered request goes to the parents, who decide whether
+// the task is waived or was the child's to do after all.
+export const DELEGATION_ACCEPT_WINDOW_MINUTES = 60;
+export const DELEGATION_STATUS = {
+  PENDING: 'pending',
+  ACCEPTED: 'accepted',
+  UNANSWERED: 'unanswered',
+  PARENT_CANCELLED: 'parent_cancelled',
+  PARENT_REJECTED: 'parent_rejected',
+  EXPIRED: 'expired',
+};
+
+export function delegationAcceptDeadline(delegation) {
+  return new Date(new Date(delegation.created_at).getTime() + DELEGATION_ACCEPT_WINDOW_MINUTES * 60 * 1000);
+}
+
+// Can a sibling still accept this request? Only while pending and inside the
+// hour. The server flips it to `unanswered` within a few minutes of the hour
+// ending; until then this keeps the "Aceitar" button from outliving it.
+export function isDelegationOpen(delegation, now = new Date()) {
+  return delegation?.status === DELEGATION_STATUS.PENDING
+    && !!delegation.created_at
+    && delegationAcceptDeadline(delegation) > now;
+}
+
+export function minutesLeftToAccept(delegation, now = new Date()) {
+  return Math.max(0, Math.ceil((delegationAcceptDeadline(delegation) - now) / 60000));
+}
+
+// The delegator's own occurrence behind a request.
+export function delegatedOccurrence(delegation) {
+  const key = delegation.task_type === 'occasional'
+    ? `o:${delegation.occasional_task_id}`
+    : `s:${delegation.scheduled_task_id}`;
+  return { key, task_name: delegation.task_name, end_time: delegation.end_time ?? null };
+}
+
+// A request nobody accepted that is still waiting for the parents. If the
+// child ended up doing the task themselves there is nothing left to decide.
+export function delegationNeedsParents(delegation, tasks = []) {
+  if (delegation?.status !== DELEGATION_STATUS.UNANSWERED) return false;
+  const occurrence = delegatedOccurrence(delegation);
+  return !tasks.some(t =>
+    t.person === delegation.from_person &&
+    t.date === delegation.task_date &&
+    t.completion_type !== 'not_done' &&
+    t.completion_type !== 'cancelled' &&
+    settlesSlot(t, occurrence)
+  );
+}
+
 // Breaking a task you accepted from a sibling costs double: you cleared
 // their failure by taking it on, then did not deliver.
 export const BROKEN_DELEGATION_WEIGHT = 2;

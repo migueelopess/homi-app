@@ -259,8 +259,6 @@ export default function Tarefas() {
 
           const extension = extensions.find(e => e.person === person && e.task_name === d.task_name && sameTaskSlot(e.end_time, originalTask.end_time));
           const cancellation = cancellations.find(c => c.person === person && settlesSlot(c, delegationOccurrence(d, originalTask.end_time)));
-          const overdue = isOverdue(originalTask.end_time, dateStr);
-
           return {
             ...originalTask,
             person,
@@ -268,7 +266,9 @@ export default function Tarefas() {
             _type: d.task_type,
             _done: completedTasks.some(ct => ct.person === person && ct.date === dateStr && settlesSlot(ct, delegationOccurrence(d, originalTask.end_time))),
             _reminded: reminders.some(r => r.person === person && r.task_name === d.task_name && sameTaskSlot(r.end_time, originalTask.end_time)),
-            _overdue: extension ? false : overdue,
+            // A task taken over from a sibling is never late for the one who
+            // took it (see completionTypeFor), so there is nothing to extend.
+            _overdue: false,
             _extended: !!extension,
             _extension: extension || null,
             _delegation: { ...d, _isReceived: true },

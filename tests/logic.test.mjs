@@ -16,7 +16,7 @@ import {
   completionMoment, isWithinDeadline, getTaskValue,
   isBonusTask, isWeeklyBonus, isBonusBlock, BONUS_TASK_NAME, DELEGATION_BONUS_TASK_NAME,
   isChore, isAdjustment, formatMoney, checkWeeklyBonus, calculateEarnings, FINE_AMOUNT, FINE_TASK_NAME,
-  DELEGATION_CHAMPION_BONUS,
+  DELEGATION_CHAMPION_BONUS, completionTypeFor,
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
 } from '../src/lib/taskHelpers.js';
 
@@ -172,6 +172,21 @@ t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_
   t('the weekly bonus is the weekly bonus', isWeeklyBonus(weekly));
   t('a zero-value weekly row blocks the week and still counts as its bonus', isWeeklyBonus(block) && isBonusBlock(block));
   t('a real bonus is not a block', isBonusBlock(weekly), false);
+}
+
+// ===== Delegated tasks are never late for the one who took them =====
+{
+  const at = new Date(2026, 9, 12, 19, 35); // 19:35, deadline was 19:00
+  t('my own task done after its deadline is late',
+    completionTypeFor({ endTime: '19:00', at }), 'late');
+  t('a delegated task done after the original deadline is on time',
+    completionTypeFor({ endTime: '19:00', at, delegated: true }), 'on_time_no_reminder');
+  t('a delegated task still honours a parent reminder',
+    completionTypeFor({ endTime: '19:00', at, delegated: true, hasReminder: true }), 'on_time_with_reminder');
+  t('an extension still makes my own late task on time',
+    completionTypeFor({ endTime: '19:00', at, extended: true }), 'on_time_no_reminder');
+  t('my own task before its deadline is on time',
+    completionTypeFor({ endTime: '19:00', at: new Date(2026, 9, 12, 18, 50) }), 'on_time_no_reminder');
 }
 
 // ===== Delegation prize =====

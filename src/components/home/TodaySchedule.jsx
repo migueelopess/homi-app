@@ -227,8 +227,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
 
         {/* Delegated occasional tasks TO me */}
         {delegatedOccasionalToMe.map((d, i) => {
-          const isExtended = extensions.some(e => e.task_name === d.task_name && (e.person === d.from_person || e.person === person) && sameTaskSlot(e.end_time, d.end_time));
-          const overdue = !isExtended && isOverdue(d.end_time);
+          // Never "late" for the one who took it over — see completionTypeFor.
           const isDone = todayTasks.some(t => t.person === person && settlesSlot(t, delegationOccurrence(d)));
           if (isDone) return null;
           return (
@@ -239,10 +238,8 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
               transition={{ delay: i * 0.05 }}
             >
               <Card
-                onClick={() => captureRef.current?.capture({ ...d, person, _delegated: true, _from: d.from_person, _occasional: true, _isExtended: isExtended })}
-                className={`p-3 flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-all border-blue-500/30 bg-blue-500/5 ${
-                  overdue ? 'border-destructive/40 bg-destructive/5' : ''
-                }`}
+                onClick={() => captureRef.current?.capture({ ...d, person, _delegated: true, _from: d.from_person, _occasional: true })}
+                className="p-3 flex items-center gap-3 cursor-pointer active:scale-[0.98] transition-all border-blue-500/30 bg-blue-500/5"
               >
                 <div className="text-xl flex-shrink-0">{TASK_ICONS[d.task_name] || '✅'}</div>
                 <div className="flex-1 min-w-0">
@@ -254,18 +251,12 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                   {d.end_time && (
                     <div className="flex items-center gap-1 mt-0.5">
                       <Clock className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-[11px] text-muted-foreground">Até às {d.end_time}</span>
+                      <span className="text-[11px] text-muted-foreground">Pedida para as {d.end_time} · sem atraso</span>
                     </div>
                   )}
                 </div>
                 <div className="flex-shrink-0">
-                  {isExtended ? (
-                    <Badge className="bg-amber-500/10 text-amber-600 border-0 text-[10px]">Extendida</Badge>
-                  ) : overdue ? (
-                    <Badge variant="destructive" className="text-[10px]">Atrasado</Badge>
-                  ) : (
-                    <Badge className="bg-blue-500/15 text-blue-600 border-0 text-[10px]">Delegada</Badge>
-                  )}
+                  <Badge className="bg-blue-500/15 text-blue-600 border-0 text-[10px]">Delegada</Badge>
                 </div>
               </Card>
             </motion.div>
@@ -332,10 +323,8 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
 
         {/* Delegated scheduled tasks TO me */}
         {delegatedScheduledToMe.map((d, i) => {
+          // Never "late" for the one who took it over — see completionTypeFor.
           const isDone = todayTasks.some(t => t.person === person && settlesSlot(t, delegationOccurrence(d)));
-          const isExtended = extensions.some(e => e.task_name === d.task_name && (e.person === d.from_person || e.person === person) && sameTaskSlot(e.end_time, d.end_time));
-          const overdue = !isDone && !isExtended && isOverdue(d.end_time);
-          const active = isActive(null, d.end_time);
 
           return (
             <motion.div
@@ -345,11 +334,9 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
               transition={{ delay: i * 0.05 }}
             >
               <Card
-                onClick={() => !isDone && captureRef.current?.capture({ ...d, person, _delegated: true, _from: d.from_person, task_name: d.task_name, end_time: d.end_time, _isExtended: isExtended })}
+                onClick={() => !isDone && captureRef.current?.capture({ ...d, person, _delegated: true, _from: d.from_person, task_name: d.task_name, end_time: d.end_time })}
                 className={`p-3 flex items-center gap-3 transition-all ${
-                  isDone ? 'opacity-60 bg-muted/50' :
-                  overdue ? 'border-destructive/40 bg-destructive/5 cursor-pointer active:scale-[0.98]' :
-                  'border-blue-500/30 bg-blue-500/5 cursor-pointer active:scale-[0.98]'
+                  isDone ? 'opacity-60 bg-muted/50' : 'border-blue-500/30 bg-blue-500/5 cursor-pointer active:scale-[0.98]'
                 }`}
               >
                 <div className="text-xl flex-shrink-0">{TASK_ICONS[d.task_name] || '✅'}</div>
@@ -361,17 +348,13 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                   {d.end_time && (
                     <div className="flex items-center gap-1 mt-0.5">
                       <Clock className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-[11px] text-muted-foreground">Até às {d.end_time}</span>
+                      <span className="text-[11px] text-muted-foreground">Pedida para as {d.end_time} · sem atraso</span>
                     </div>
                   )}
                 </div>
                 <div className="flex-shrink-0">
                   {isDone ? (
                     <CheckCircle2 className="w-5 h-5 text-primary" />
-                  ) : isExtended ? (
-                    <Badge className="bg-amber-500/10 text-amber-600 border-0 text-[10px]">Extendida</Badge>
-                  ) : overdue ? (
-                    <Badge variant="destructive" className="text-[10px]">Atrasado</Badge>
                   ) : (
                     <Badge className="bg-blue-500/15 text-blue-600 border-0 text-[10px]">Delegada</Badge>
                   )}

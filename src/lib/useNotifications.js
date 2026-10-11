@@ -137,6 +137,11 @@ export function useNotifications({
       );
       if (t1) timersRef.current.push(t1);
 
+      // No "deadline passed" alert for a task taken over from a sibling: it
+      // cannot be late for them (see completionTypeFor), so telling them the
+      // deadline ended would only be wrong.
+      if (delegatedFrom) return;
+
       const deadlineTime = new Date();
       deadlineTime.setHours(h, m, 0, 0);
       const t2 = scheduleNotification(

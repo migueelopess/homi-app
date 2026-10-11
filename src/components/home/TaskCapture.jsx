@@ -5,7 +5,7 @@ import { TaskService, OccasionalTaskService } from '@/api/entities';
 import { remindersByDateQuery, INVALIDATE } from '@/lib/queries';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { uploadTaskPhoto } from '@/api/storage';
-import { COMPLETION_TYPES, getTaskValue, getLocalDateStr, sameTaskSlot, slotColumns, completionMoment, isWithinDeadline } from '@/lib/taskHelpers';
+import { COMPLETION_TYPES, getTaskValue, getLocalDateStr, sameTaskSlot, slotColumns, completionMoment, completionTypeFor } from '@/lib/taskHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Loader2, RefreshCw, WifiOff } from 'lucide-react';
 
@@ -76,10 +76,13 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
       const hasReminder = reminders.some(
         r => r.task_name === task.task_name && sameTaskSlot(r.end_time, task.end_time)
       );
-      const inTime = task._isExtended || isWithinDeadline(task.end_time, doneAt);
-      const completion_type = inTime
-        ? (hasReminder ? 'on_time_with_reminder' : 'on_time_no_reminder')
-        : 'late';
+      const completion_type = completionTypeFor({
+        endTime: task.end_time,
+        at: doneAt,
+        hasReminder,
+        delegated: !!task._delegated,
+        extended: !!task._isExtended,
+      });
       const value = taskValue(task, completion_type);
       const isOccasional = task._occasional || task._type === 'occasional';
       const occasionalTaskId = isOccasional

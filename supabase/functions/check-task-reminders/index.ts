@@ -290,8 +290,10 @@ Deno.serve(async (req) => {
         }
       }
 
-      // At deadline (window: 0-5 min after)
-      if (minutesUntilDeadline >= -14 && minutesUntilDeadline <= 0) {
+      // At deadline. Not sent for a task taken over from a sibling: it can
+      // never be late for the one who took it, so "the deadline has passed"
+      // would be wrong for them.
+      if (!delegation && minutesUntilDeadline >= -14 && minutesUntilDeadline <= 0) {
         const key = `scheduled:${task.id}:${todayStr}:deadline`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase
@@ -386,8 +388,8 @@ Deno.serve(async (req) => {
         }
       }
 
-      // At deadline
-      if (minutesUntilDeadline >= -14 && minutesUntilDeadline <= 0) {
+      // At deadline (not for delegated tasks — see the scheduled loop)
+      if (!delegation && minutesUntilDeadline >= -14 && minutesUntilDeadline <= 0) {
         const key = `occasional:${task.id}:${todayStr}:deadline`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase

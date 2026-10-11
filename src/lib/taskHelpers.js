@@ -353,6 +353,19 @@ export function isWithinDeadline(endTime, at = new Date()) {
   return at <= deadline;
 }
 
+// How a completed task is classed, which decides what it pays.
+//
+// A task taken over from a sibling (`delegated`) is never late for the one who
+// took it: its deadline belonged to whoever delegated it, often a deadline that
+// had already passed when they asked for help. Doing someone a favour minutes
+// after accepting it must not pay the 25% "late" rate. What still applies is
+// doing it that day — an accepted delegation left undone is a double failure.
+export function completionTypeFor({ endTime, at = new Date(), hasReminder = false, delegated = false, extended = false }) {
+  const inTime = delegated || extended || isWithinDeadline(endTime, at);
+  if (!inTime) return 'late';
+  return hasReminder ? 'on_time_with_reminder' : 'on_time_no_reminder';
+}
+
 export function getCurrentMonthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;

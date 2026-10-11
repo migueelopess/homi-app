@@ -1,10 +1,11 @@
-import { COMPLETION_TYPES, getTaskIcon, isBonusTask } from '@/lib/taskHelpers';
+import { COMPLETION_TYPES, getTaskIcon, isBonusTask, isBonusBlock } from '@/lib/taskHelpers';
 import { format, parse } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { motion } from 'framer-motion';
 
 export default function RecentActivity({ tasks }) {
-  const recent = [...tasks]
+  const recent = tasks
+    .filter(t => !isBonusBlock(t))
     .sort((a, b) => b.date.localeCompare(a.date) || new Date(b.created_date) - new Date(a.created_date))
     .slice(0, 8);
 

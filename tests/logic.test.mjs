@@ -14,6 +14,7 @@ import {
   slotColumns, isDelegationFulfilled, sameTaskSlot, occurrenceOf,
   isTaskCancelled, isDelegationWaived, applyCancellations,
   completionMoment, isWithinDeadline, getTaskValue,
+  isBonusTask, isWeeklyBonus, isBonusBlock, BONUS_TASK_NAME, DELEGATION_BONUS_TASK_NAME,
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
 } from '../src/lib/taskHelpers.js';
 
@@ -158,6 +159,18 @@ t('Limpeza semanal pays 6.50', getTaskValue('Limpeza semanal', 'on_time_no_remin
 t('a rejected Limpeza mensal pays nothing', getTaskValue('Limpeza mensal', 'not_done'), 0);
 t('Fatura IQA still pays 0.50', getTaskValue('Fatura IQA', 'on_time_no_reminder'), 0.5);
 t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_reminder'), 1);
+
+// ===== Bonus rows =====
+{
+  const weekly = { task_name: BONUS_TASK_NAME, value: 5 };
+  const prize = { task_name: DELEGATION_BONUS_TASK_NAME, value: 5 };
+  const block = { task_name: BONUS_TASK_NAME, value: 0 };
+  t('the delegation prize is a bonus', isBonusTask(prize));
+  t('the delegation prize is NOT the weekly bonus (it was deleted every open)', isWeeklyBonus(prize), false);
+  t('the weekly bonus is the weekly bonus', isWeeklyBonus(weekly));
+  t('a zero-value weekly row blocks the week and still counts as its bonus', isWeeklyBonus(block) && isBonusBlock(block));
+  t('a real bonus is not a block', isBonusBlock(weekly), false);
+}
 
 // ===== The moment a chore was done =====
 // The scenario the family actually hits: photo taken in a weak-signal corner of

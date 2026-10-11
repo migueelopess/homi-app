@@ -8,6 +8,7 @@ import {
   BONUS_TASK_NAME,
   BONUS_COMPLETION_TYPE,
   isBonusTask,
+  isWeeklyBonus,
   isAwaitingDecision,
   applyCancellations,
   getCurrentWeekKey,
@@ -36,8 +37,11 @@ function planBonuses(tasks, weekKeys) {
       if (personWeekTasks.some(isAwaitingDecision)) continue;
 
       const shouldHaveBonus = personWeekTasks.every(t => t.completion_type !== 'not_done');
+      // Only a weekly bonus row (a zero-value block included) answers this.
+      // The monthly delegation prize can fall in the same week and must never
+      // be mistaken for it — that used to delete the prize on every app open.
       const existingBonus = tasks.find(
-        t => t.person === person && t.week_key === weekKey && isBonusTask(t)
+        t => t.person === person && t.week_key === weekKey && isWeeklyBonus(t)
       );
 
       if (shouldHaveBonus && !existingBonus) {

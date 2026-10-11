@@ -43,6 +43,23 @@ export function isBonusTask(task) {
       || task?.task_name === DELEGATION_BONUS_TASK_NAME;
 }
 
+// Only the weekly bonus — not the monthly delegation prize. The prize is dated
+// on the last day of the month, so it sits inside some week too, and treating
+// it as that week's weekly bonus made the weekly logic delete it whenever the
+// week had a failure. The prize materializer then recreated it, on every app
+// open, with a fresh creation date — which also made an already-paid prize
+// look unpaid again.
+export function isWeeklyBonus(task) {
+  return task?.task_name === BONUS_TASK_NAME;
+}
+
+// A zero-value bonus row: written on purpose to mark a past week as "no bonus"
+// (e.g. after the parents wiped that week's penalties) so it is never awarded
+// retroactively. It carries no money and is hidden from activity lists.
+export function isBonusBlock(task) {
+  return isBonusTask(task) && !Number(task.value);
+}
+
 export const PENALTIES = {
   'Inês': 'Telemóvel/TV',
   'Pedro': 'Monitores',

@@ -8,7 +8,7 @@ import PhotoModal from '@/components/parents/PhotoModal';
 import ApprovalsTab from '@/components/parents/ApprovalsTab';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { supabase } from '@/api/supabaseClient';
-import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, isAwaitingDecision, isTaskPaid, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, isBonusBlock, isAwaitingDecision, isTaskPaid, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -500,7 +500,7 @@ export default function Parents() {
       <div className="space-y-3">
         <h3 className="text-sm font-bold text-foreground">📋 Histórico por Filho</h3>
         {PEOPLE.map(person => {
-          const personTasks = tasks.filter(t => t.person === person);
+          const personTasks = tasks.filter(t => t.person === person && !isBonusBlock(t));
           const isExpanded = expandedPerson === person;
           return (
             <Card key={person} className="overflow-hidden">

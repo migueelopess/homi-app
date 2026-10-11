@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { tasksQuery, cancellationsQuery } from '@/lib/queries';
-import { PEOPLE, PERSON_AVATARS, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, isBonusTask, applyCancellations } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, isBonusTask, isWeeklyBonus, applyCancellations } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -30,7 +30,7 @@ export default function Ranking() {
 
       const earnings = calculateEarnings(realTasks);
       const persistedBonus = calculateEarnings(bonusTasks);
-      const currentWeekBonusAlreadyPersisted = bonusTasks.some(t => t.week_key === currentWeek);
+      const currentWeekBonusAlreadyPersisted = bonusTasks.some(t => isWeeklyBonus(t) && t.week_key === currentWeek);
       const pendingBonus = !currentWeekBonusAlreadyPersisted && checkWeeklyBonus(filteredTasks, person, currentWeek)
         ? WEEKLY_BONUS
         : 0;

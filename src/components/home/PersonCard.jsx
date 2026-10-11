@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PERSON_AVATARS, PENALTIES, calculateEarnings, countFailures, getLocalDateStr, getCurrentMonthKey, getCurrentWeekKey, checkWeeklyBonus, isBonusTask, isAwaitingDecision, isTaskPaid, WEEKLY_BONUS } from '@/lib/taskHelpers';
+import { PERSON_AVATARS, PENALTIES, calculateEarnings, countFailures, getLocalDateStr, getCurrentMonthKey, getCurrentWeekKey, checkWeeklyBonus, isWeeklyBonus, isAwaitingDecision, isTaskPaid, WEEKLY_BONUS } from '@/lib/taskHelpers';
 import { AlertTriangle, Trophy } from 'lucide-react';
 
 export default function PersonCard({ person, tasks, weekTasks, lastPaidAt = null, index }) {
@@ -24,7 +24,7 @@ export default function PersonCard({ person, tasks, weekTasks, lastPaidAt = null
   // Pending bonus for the current week — only count if not already persisted.
   // If the week was paid mid-week the bonus will materialize after lastPaidAt
   // and thus still owed, so we include it here regardless of paid state.
-  const currentWeekBonusAlreadyPersisted = personWeekTasks.some(t => isBonusTask(t) && t.week_key === currentWeek);
+  const currentWeekBonusAlreadyPersisted = personWeekTasks.some(t => isWeeklyBonus(t) && t.week_key === currentWeek);
   const pendingBonus = !currentWeekBonusAlreadyPersisted && checkWeeklyBonus(tasks, person, currentWeek)
     ? WEEKLY_BONUS
     : 0;

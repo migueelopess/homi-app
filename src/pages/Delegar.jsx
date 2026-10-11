@@ -5,8 +5,8 @@ import { tasksQuery, cancellationsQuery, delegationsQuery, INVALIDATE } from '@/
 import { sendPushNotification } from '@/api/supabaseClient';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import {
-  PERSON_AVATARS, TASK_ICONS, SIDNEY_TASKS, getLocalDateStr, getCurrentMonthKey,
-  getDelegationStats, rankDelegations, getAcceptBlock, getDelegationReward,
+  PERSON_AVATARS, TASK_ICONS, SIDNEY_TASKS, getLocalDateStr,
+  getAcceptBlock, getDelegationReward,
   DELEGATION_CHAMPION_BONUS, BROKEN_DELEGATION_WEIGHT,
 } from '@/lib/taskHelpers';
 import { Lock, Handshake, Clock, Inbox, Send, CheckCircle2, Trophy, ShieldAlert, AlertTriangle } from 'lucide-react';
@@ -18,8 +18,7 @@ import { format } from 'date-fns';
 import { pt } from 'date-fns/locale';
 import { PageSkeleton } from '@/components/layout/PageSkeleton';
 import Portal from '@/components/layout/Portal';
-
-const MEDALS = ['🥇', '🥈', '🥉'];
+import DelegationRanking from '@/components/delegations/DelegationRanking';
 
 export default function Delegar() {
   const { data: user, isLoading: loadingUser } = useCurrentUser();
@@ -69,13 +68,10 @@ export default function Delegar() {
   // This month's standings, and whether I'm currently barred from accepting
   // because I broke a promise. Memoised: both walk every delegation against
   // every task, and this component re-renders on each cache update.
-  const currentMonth = getCurrentMonthKey();
-  const { ranking, acceptBlock } = useMemo(() => ({
-    ranking: rankDelegations(
-      getDelegationStats(delegations, tasks, { monthKey: currentMonth, cancellations })
-    ),
-    acceptBlock: getAcceptBlock(delegations, tasks, person, cancellations),
-  }), [delegations, tasks, cancellations, currentMonth, person]);
+  const acceptBlock = useMemo(
+    () => getAcceptBlock(delegations, tasks, person, cancellations),
+    [delegations, tasks, cancellations, person],
+  );
 
   if (loadingUser || loadingDelegations) {
     return <PageSkeleton />;
@@ -108,7 +104,6 @@ export default function Delegar() {
     d => d.to_person === person && d.status === 'accepted' && d.task_date >= today
   );
 
-  const leaderScore = ranking[0]?.completed ?? 0;
 
   return (
     <div className="max-w-lg mx-auto px-4 pt-6 pb-4">
@@ -121,61 +116,13 @@ export default function Delegar() {
       </motion.div>
 
       {/* Monthly standings — who actually delivers on what they take on */}
-      <Card className="p-4 mb-6 bg-gradient-to-r from-primary/5 to-accent/5 border-primary/20">
-        <div className="flex items-center gap-2 mb-1">
-          <Trophy className="w-4 h-4 text-accent" />
-          <h2 className="text-base font-bold text-foreground">Ranking de ajudas</h2>
-          <Badge className="bg-accent/20 text-accent-foreground border-0 text-[10px] ml-auto">
-            {format(new Date(), 'MMMM', { locale: pt })}
-          </Badge>
-        </div>
-        <p className="text-xs text-muted-foreground mb-4">
-          Quem cumprir mais tarefas que aceitou dos irmãos ganha{' '}
-          <strong className="text-primary">€{DELEGATION_CHAMPION_BONUS.toFixed(2)}</strong> no fim do mês.
-        </p>
-
-        <div className="space-y-2">
-          {ranking.map((r, i) => {
-            const isLeader = r.completed > 0 && r.completed === leaderScore;
-            const isMe = r.person === person;
-            return (
-              <div
-                key={r.person}
-                className={`flex items-center gap-2 p-2 rounded-xl ${
-                  isLeader ? 'bg-accent/10 ring-1 ring-accent/30' : 'bg-muted/50'
-                }`}
-              >
-                <span className="w-5 text-center text-sm">{r.completed > 0 ? (MEDALS[i] || '') : ''}</span>
-                <span>{PERSON_AVATARS[r.person]}</span>
-                <span className={`text-sm ${isMe ? 'font-bold text-foreground' : 'text-foreground'}`}>
-                  {r.person}{isMe && <span className="text-muted-foreground font-normal"> (tu)</span>}
-                </span>
-
-                <div className="ml-auto flex items-center gap-1.5">
-                  {r.open > 0 && (
-                    <Badge className="bg-blue-500/15 text-blue-600 border-0 text-[10px]">
-                      {r.open} por fazer
-                    </Badge>
-                  )}
-                  {r.broken > 0 && (
-                    <Badge className="bg-destructive/15 text-destructive border-0 text-[10px] gap-1">
-                      <AlertTriangle className="w-2.5 h-2.5" />
-                      {r.broken}
-                    </Badge>
-                  )}
-                  <span className="text-base font-extrabold text-primary tabular-nums">{r.completed}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {leaderScore === 0 && (
-          <p className="text-[11px] text-muted-foreground text-center mt-3">
-            Ainda ninguém cumpriu nenhuma. Sê o primeiro 💪
-          </p>
-        )}
-      </Card>
+      <DelegationRanking
+        delegations={delegations}
+        tasks={tasks}
+        cancellations={cancellations}
+        viewer={person}
+        className="mb-6"
+      />
 
       {/* Cooling-off after breaking a promise */}
       {acceptBlock.blocked && (

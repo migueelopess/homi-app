@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TaskService, PaymentService, TaskCancellationService } from '@/api/entities';
-import { tasksQuery, cancellationsQuery, pendingTasksQuery, lastPaidAtQuery, INVALIDATE } from '@/lib/queries';
+import { tasksQuery, cancellationsQuery, pendingTasksQuery, lastPaidAtQuery, delegationsQuery, INVALIDATE } from '@/lib/queries';
+import DelegationRanking from '@/components/delegations/DelegationRanking';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { Lock, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Loader2, Check, AlertTriangle } from 'lucide-react';
 import PhotoModal from '@/components/parents/PhotoModal';
@@ -50,6 +51,11 @@ export default function Parents() {
 
   const { data: lastPaidAts = {} } = useQuery({
     ...lastPaidAtQuery(),
+    enabled: isParent(user),
+  });
+
+  const { data: delegations = [] } = useQuery({
+    ...delegationsQuery(),
     enabled: isParent(user),
   });
 
@@ -465,6 +471,15 @@ export default function Parents() {
           })}
         </div>
       </Card>
+
+      {/* Delegações — who delivers on what they took over, and who would take the
+          monthly prize the parents pay. */}
+      <DelegationRanking
+        delegations={delegations}
+        tasks={tasks}
+        cancellations={cancellations}
+        className="mb-4"
+      />
 
       {/* Limpeza de Dados */}
       <Card className="p-4 mt-4 mb-4">

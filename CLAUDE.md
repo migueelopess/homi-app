@@ -45,7 +45,7 @@ the flow.
 
 - `@/` import alias → `src/` (configured in `jsconfig.json` and `vite.config.js`).
 - **`src/pages.config.js` is auto-generated** — do not edit it except the `mainPage` value. Pages are auto-registered from files in `src/pages/`.
-- UI is shadcn/ui: primitives live in `src/components/ui/` (generally leave these alone; they're generated). Feature components live in `src/components/{home,layout,parents,register,notifications}/`.
+- UI is shadcn/ui: primitives live in `src/components/ui/` (generally leave these alone; they're generated). Feature components live in `src/components/{home,layout,parents,register,notifications,delegations}/`.
 - Task approval flow: a task has `approval_status` (`pending`/`approved`/`rejected`). Rejection sets `value: 0` and `completion_type: 'not_done'` so earnings/failure logic flows naturally — see comments in `entities.js`.
 - ESLint targets `src/pages/**` and `src/components/**` (excluding `components/ui`); `src/lib`, `src/api` are excluded from lint but type-checked selectively via jsconfig.
 

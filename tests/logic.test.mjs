@@ -15,6 +15,7 @@ import {
   isTaskCancelled, isDelegationWaived, applyCancellations,
   completionMoment, isWithinDeadline, getTaskValue,
   isBonusTask, isWeeklyBonus, isBonusBlock, BONUS_TASK_NAME, DELEGATION_BONUS_TASK_NAME,
+  isChore, isAdjustment, formatMoney, checkWeeklyBonus, calculateEarnings, FINE_AMOUNT, FINE_TASK_NAME,
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
 } from '../src/lib/taskHelpers.js';
 
@@ -170,6 +171,23 @@ t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_
   t('the weekly bonus is the weekly bonus', isWeeklyBonus(weekly));
   t('a zero-value weekly row blocks the week and still counts as its bonus', isWeeklyBonus(block) && isBonusBlock(block));
   t('a real bonus is not a block', isBonusBlock(weekly), false);
+}
+
+// ===== Fines and negative balances =====
+{
+  const fine = { person: 'Pedro', task_name: FINE_TASK_NAME, completion_type: 'adjustment', value: -FINE_AMOUNT,
+                 approval_status: 'approved', week_key: '2026-W42' };
+  const chore = { person: 'Pedro', task_name: 'Mesa jantar', completion_type: 'on_time_no_reminder', value: 1,
+                  approval_status: 'approved', week_key: '2026-W42' };
+  t('a fine is an adjustment', isAdjustment(fine));
+  t('a fine is not a chore', isChore(fine), false);
+  t('a fine is not a bonus', isBonusTask(fine), false);
+  t('an ordinary task is a chore', isChore(chore));
+  t('a fine can take the balance below zero', calculateEarnings([chore, fine]), -9);
+  t('a week with only a fine earns no weekly bonus', checkWeeklyBonus([fine], 'Pedro', '2026-W42'), false);
+  t('a fine neither blocks nor grants a perfect week', checkWeeklyBonus([chore, fine], 'Pedro', '2026-W42'));
+  t('debts are shown with a minus sign', formatMoney(-10), '−€10.00');
+  t('positive money is shown plain', formatMoney(4), '€4.00');
 }
 
 // ===== The moment a chore was done =====

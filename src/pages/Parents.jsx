@@ -4,12 +4,12 @@ import { TaskService, PaymentService, TaskCancellationService } from '@/api/enti
 import { tasksQuery, cancellationsQuery, pendingTasksQuery, lastPaidAtQuery, delegationsQuery, INVALIDATE } from '@/lib/queries';
 import DelegationRanking from '@/components/delegations/DelegationRanking';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
-import { Lock, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Loader2, Check, AlertTriangle } from 'lucide-react';
+import { Lock, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Loader2, Check, AlertTriangle, Ban, Euro } from 'lucide-react';
 import PhotoModal from '@/components/parents/PhotoModal';
 import ApprovalsTab from '@/components/parents/ApprovalsTab';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
-import { supabase } from '@/api/supabaseClient';
-import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, isBonusBlock, isAwaitingDecision, isTaskPaid, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
+import { supabase, sendPushNotification } from '@/api/supabaseClient';
+import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, isBonusBlock, isChore, isAwaitingDecision, isTaskPaid, getLocalDateStr, applyCancellations, FINE_AMOUNT, FINE_TASK_NAME, ADJUSTMENT_COMPLETION_TYPE, completionMoment, formatMoney } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -134,6 +134,59 @@ export default function Parents() {
     },
   });
 
+  // The alternative to the punishment: the same three failures are discharged,
+  // and FINE_AMOUNT comes off the child's balance — which may go negative.
+  // Two writes, so if the fine row cannot be written the discharge is undone:
+  // the child must never lose the failures without paying either way.
+  const fineMutation = useMutation({
+    mutationFn: async ({ person }) => {
+      const discharged = await TaskService.applyPenalty(person, user?.id);
+      if (discharged.length === 0) return { discharged };
+      try {
+        await TaskService.create({
+          person,
+          task_name: FINE_TASK_NAME,
+          completion_type: ADJUSTMENT_COMPLETION_TYPE,
+          value: -FINE_AMOUNT,
+          end_time: null,
+          ...completionMoment(new Date()),
+          approval_status: 'approved',
+          approved_at: new Date().toISOString(),
+          approved_by: user?.id ?? null,
+        });
+      } catch (err) {
+        await TaskService.undoPenalty(discharged.map(t => t.id)).catch(() => {});
+        throw err;
+      }
+      sendPushNotification({
+        person,
+        title: `💸 Multa de €${FINE_AMOUNT.toFixed(2)}`,
+        body: `Chegaste às 3 falhas — foram descontados €${FINE_AMOUNT.toFixed(2)} do teu saldo Homi.`,
+        url: '/',
+        tag: `fine-${person}-${getLocalDateStr()}`,
+      });
+      return { discharged };
+    },
+    onSuccess: ({ discharged }, vars) => {
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.tasks });
+      if (discharged.length === 0) {
+        toast.error('Sem falhas pendentes para descontar');
+      } else {
+        toast.success(`Multa de €${FINE_AMOUNT.toFixed(2)} aplicada a ${vars.person}`);
+      }
+    },
+    onError: (err) => {
+      console.error('Apply fine failed:', err);
+      toast.error('Erro ao aplicar a multa');
+    },
+  });
+
+  // What the child would be paid right now — everything decided and not yet
+  // paid. Negative when a fine outweighs what they have earned since.
+  const balanceOf = (person) => calculateEarnings(
+    tasks.filter(t => t.person === person && !isAwaitingDecision(t) && !isTaskPaid(t, lastPaidAts[person]))
+  );
+
   const handleCleanup = async () => {
     setCleanupLoading(true);
     try {
@@ -156,7 +209,10 @@ export default function Parents() {
           queryClient.resetQueries({ queryKey });
         }
         toast.success(
-          `Limpeza concluída: ${data.deleted_tasks} tarefas, ${data.deleted_photos} fotos, ${data.deleted_occasional_tasks} ocasionais, ${data.deleted_reminders} lembretes, ${data.deleted_delegations} delegações apagados`
+          `Limpeza concluída: ${data.deleted_tasks} tarefas, ${data.deleted_photos} fotos, ${data.deleted_occasional_tasks} ocasionais, ${data.deleted_reminders} lembretes, ${data.deleted_delegations} delegações apagados` +
+          (Object.keys(data.carried_over || {}).length
+            ? `. Saldos por pagar mantidos: ${Object.entries(data.carried_over).map(([p, v]) => `${p} ${formatMoney(v)}`).join(', ')}`
+            : '')
         );
       }
     } catch (err) {
@@ -189,7 +245,7 @@ export default function Parents() {
   const PersonSummary = ({ person, filteredTasks, periodLabel }) => {
     const earnings = calculateEarnings(filteredTasks.filter(t => t.person === person));
     const personTasks = filteredTasks.filter(t => t.person === person);
-    const realTasks = personTasks.filter(t => !isBonusTask(t));
+    const realTasks = personTasks.filter(isChore);
     const perfect = realTasks.filter(t => t.completion_type === 'on_time_no_reminder').length;
     const withReminder = realTasks.filter(t => t.completion_type === 'on_time_with_reminder').length;
     const late = realTasks.filter(t => t.completion_type === 'late').length;
@@ -210,7 +266,7 @@ export default function Parents() {
             <p className="text-xs text-muted-foreground">{realTasks.length} tarefas {periodLabel}</p>
           </div>
           <div className="text-right">
-            <p className="text-xl font-extrabold text-primary">€{earnings.toFixed(2)}</p>
+            <p className={`text-xl font-extrabold ${earnings < 0 ? 'text-red-600 dark:text-red-400' : 'text-primary'}`}>{formatMoney(earnings)}</p>
             {hasBonus && <p className="text-[10px] text-accent font-semibold">+€{WEEKLY_BONUS.toFixed(2)} bónus</p>}
           </div>
         </div>
@@ -265,8 +321,10 @@ export default function Parents() {
       olderTotal += olderAmt;
     });
 
+    // Only a positive balance is ever paid. A child in the red is left out, and
+    // their debt keeps being netted against what they earn until it clears.
     const personsWithAnyDebt = PEOPLE.filter((p) => periodUnpaid[p] + olderUnpaid[p] > 0);
-    const grandTotal = periodTotal + olderTotal;
+    const grandTotal = personsWithAnyDebt.reduce((sum, p) => sum + periodUnpaid[p] + olderUnpaid[p], 0);
     const olderLabel = period === 'week' ? 'semanas anteriores' : 'meses anteriores';
     const periodLabel = period === 'week' ? 'semana' : 'mês';
 
@@ -298,6 +356,7 @@ export default function Parents() {
                           <li key={p}>
                             {p}: €{t.toFixed(2)}
                             {olderUnpaid[p] > 0 && ` (inclui €${olderUnpaid[p].toFixed(2)} de ${olderLabel})`}
+                            {olderUnpaid[p] < 0 && ` (já descontada a dívida de €${Math.abs(olderUnpaid[p]).toFixed(2)})`}
                           </li>
                         );
                       })}
@@ -334,9 +393,15 @@ export default function Parents() {
                       +€{olderAmt.toFixed(2)} antigo
                     </span>
                   )}
+                  {olderAmt < 0 && (
+                    <span className="text-xs font-bold text-red-600 dark:text-red-400 bg-red-500/10 border border-red-500/30 px-1.5 py-0.5 rounded-md inline-flex items-center gap-1">
+                      <AlertTriangle className="w-3 h-3" />
+                      {formatMoney(olderAmt)} em dívida
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-primary">€{periodAmt.toFixed(2)}</span>
+                  <span className={`text-sm font-bold ${periodAmt < 0 ? 'text-red-600 dark:text-red-400' : 'text-primary'}`}>{formatMoney(periodAmt)}</span>
                   {totalAmt > 0 && (
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
@@ -350,6 +415,7 @@ export default function Parents() {
                           <AlertDialogDescription>
                             Vai registar o pagamento de <strong>€{totalAmt.toFixed(2)}</strong> ao {person}.
                             {olderAmt > 0 && ` Inclui €${olderAmt.toFixed(2)} de ${olderLabel}.`}
+                            {olderAmt < 0 && ` Já com a dívida de €${Math.abs(olderAmt).toFixed(2)} descontada.`}
                             {' '}Todas as tarefas até hoje ({format(new Date(), 'd MMM yyyy', { locale: pt })}) ficam marcadas como pagas.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
@@ -368,7 +434,7 @@ export default function Parents() {
           })}
           <div className="border-t border-border pt-2 mt-2 flex items-center justify-between">
             <span className="text-sm font-bold text-foreground">Total {periodLabel}</span>
-            <span className="text-base font-extrabold text-primary">€{periodTotal.toFixed(2)}</span>
+            <span className={`text-base font-extrabold ${periodTotal < 0 ? 'text-red-600 dark:text-red-400' : 'text-primary'}`}>{formatMoney(periodTotal)}</span>
           </div>
         </div>
       </Card>
@@ -417,7 +483,10 @@ export default function Parents() {
 
       {/* Penalizações */}
       <Card className="p-4 mt-4 mb-4">
-        <h3 className="text-sm font-bold text-foreground mb-3">⚠️ Penalizações (3 falhas/30 dias)</h3>
+        <h3 className="text-sm font-bold text-foreground mb-1">⚠️ Penalizações (3 falhas/30 dias)</h3>
+        <p className="text-[11px] text-muted-foreground mb-3">
+          Às 3 falhas escolhes: o castigo, ou tirar €{FINE_AMOUNT} do saldo Homi.
+        </p>
         <div className="space-y-2">
           {PEOPLE.map(person => {
             const failures = countFailures(tasks, person);
@@ -431,37 +500,82 @@ export default function Parents() {
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-muted-foreground">{failures}/3</span>
                   {canApply ? (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="h-7 px-3 text-[11px] font-semibold"
-                          disabled={applyPenaltyMutation.isPending}
-                        >
-                          Dar castigo
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Aplicar castigo a {person}?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Castigo: <strong>Sem {PENALTIES[person]}</strong>.
-                            <br />
-                            Vai descontar 3 falhas do contador ({failures}/3 → {failures - 3}/3).
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction
-                            onClick={() => applyPenaltyMutation.mutate({ person })}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    <div className="flex items-center gap-1.5">
+                      {/* Option 1: the punishment */}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            className="h-7 px-2.5 text-[11px] font-semibold gap-1"
+                            disabled={applyPenaltyMutation.isPending || fineMutation.isPending}
                           >
-                            Confirmar
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
+                            <Ban className="w-3 h-3" />
+                            Castigo
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Aplicar castigo a {person}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Castigo: <strong>Sem {PENALTIES[person]}</strong>.
+                              <br />
+                              Vai descontar 3 falhas do contador ({failures}/3 → {Math.max(0, failures - 3)}/3).
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => applyPenaltyMutation.mutate({ person })}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Aplicar castigo
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+
+                      {/* Option 2: the fine, instead of the punishment */}
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2.5 text-[11px] font-semibold gap-1 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            disabled={applyPenaltyMutation.isPending || fineMutation.isPending}
+                          >
+                            <Euro className="w-3 h-3" />
+                            −{FINE_AMOUNT}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Tirar €{FINE_AMOUNT.toFixed(2)} a {person}?</AlertDialogTitle>
+                            <AlertDialogDescription asChild>
+                              <div className="space-y-2">
+                                <p>Em vez do castigo, são descontados <strong>€{FINE_AMOUNT.toFixed(2)}</strong> do saldo Homi do {person}.</p>
+                                <p>
+                                  Saldo: <strong>{formatMoney(balanceOf(person))}</strong> → <strong className={balanceOf(person) - FINE_AMOUNT < 0 ? 'text-red-600 dark:text-red-400' : ''}>{formatMoney(balanceOf(person) - FINE_AMOUNT)}</strong>
+                                </p>
+                                {balanceOf(person) - FINE_AMOUNT < 0 && (
+                                  <p className="text-xs">O saldo fica negativo: a dívida é descontada das próximas tarefas antes de voltar a haver valor a pagar.</p>
+                                )}
+                                <p className="text-xs">Também desconta 3 falhas do contador ({failures}/3 → {Math.max(0, failures - 3)}/3).</p>
+                              </div>
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => fineMutation.mutate({ person })}
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            >
+                              Tirar €{FINE_AMOUNT.toFixed(2)}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
                   ) : (
                     <Badge className="bg-primary/10 text-primary text-[10px] border-0">OK</Badge>
                   )}
@@ -570,7 +684,7 @@ export default function Parents() {
                         {isMissed ? (
                           <span className="text-base font-extrabold text-destructive leading-none px-1">✕</span>
                         ) : (
-                          <span className={`font-bold ${ct?.color} ${isPending ? 'opacity-50' : ''} ${isRejected ? 'line-through opacity-60' : ''}`}>€{(task.value || 0).toFixed(2)}</span>
+                          <span className={`font-bold ${ct?.color} ${isPending ? 'opacity-50' : ''} ${isRejected ? 'line-through opacity-60' : ''}`}>{formatMoney(task.value)}</span>
                         )}
                         <div className="flex gap-1">
                           {task.photo_url && (

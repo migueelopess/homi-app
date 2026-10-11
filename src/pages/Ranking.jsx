@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { tasksQuery, cancellationsQuery } from '@/lib/queries';
-import { PEOPLE, PERSON_AVATARS, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, isBonusTask, isWeeklyBonus, applyCancellations } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, isBonusTask, isWeeklyBonus, isChore, isAdjustment, applyCancellations, formatMoney } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -25,8 +25,11 @@ export default function Ranking() {
   const getRanking = (filteredTasks) => {
     return PEOPLE.map(person => {
       const personTasks = filteredTasks.filter(t => t.person === person);
-      const realTasks = personTasks.filter(t => !isBonusTask(t));
+      const realTasks = personTasks.filter(isChore);
       const bonusTasks = personTasks.filter(t => isBonusTask(t));
+      // Fines (and carried balances) are money, not chores: they move the total
+      // but never the task counts.
+      const adjustments = calculateEarnings(personTasks.filter(isAdjustment));
 
       const earnings = calculateEarnings(realTasks);
       const persistedBonus = calculateEarnings(bonusTasks);
@@ -37,7 +40,7 @@ export default function Ranking() {
       const bonus = persistedBonus + pendingBonus;
 
       const perfectTasks = realTasks.filter(t => t.completion_type === 'on_time_no_reminder').length;
-      return { person, earnings, bonus, total: earnings + bonus, taskCount: realTasks.length, perfectTasks };
+      return { person, earnings, bonus, total: earnings + bonus + adjustments, taskCount: realTasks.length, perfectTasks };
     }).sort((a, b) => b.total - a.total);
   };
 
@@ -88,7 +91,7 @@ export default function Ranking() {
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xl font-extrabold text-primary">€{entry.total.toFixed(2)}</p>
+                  <p className={`text-xl font-extrabold ${entry.total < 0 ? 'text-red-600 dark:text-red-400' : 'text-primary'}`}>{formatMoney(entry.total)}</p>
                   {entry.bonus > 0 && (
                     <p className="text-[10px] text-accent">+€{entry.bonus.toFixed(2)} bónus</p>
                   )}

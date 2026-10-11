@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { PERSON_AVATARS, PENALTIES, calculateEarnings, countFailures, getLocalDateStr, getCurrentMonthKey, getCurrentWeekKey, checkWeeklyBonus, isWeeklyBonus, isAwaitingDecision, isTaskPaid, WEEKLY_BONUS } from '@/lib/taskHelpers';
+import { PERSON_AVATARS, PENALTIES, calculateEarnings, countFailures, getLocalDateStr, getCurrentMonthKey, getCurrentWeekKey, checkWeeklyBonus, isWeeklyBonus, isAwaitingDecision, isTaskPaid, WEEKLY_BONUS, formatMoney } from '@/lib/taskHelpers';
 import { AlertTriangle, Trophy } from 'lucide-react';
 
 export default function PersonCard({ person, tasks, weekTasks, lastPaidAt = null, index }) {
@@ -30,6 +30,12 @@ export default function PersonCard({ person, tasks, weekTasks, lastPaidAt = null
     : 0;
   const weekTotal = weekEarnings + pendingBonus;
   const monthTotal = monthEarnings + pendingBonus;
+
+  // Everything still owed to (or by) the child, whatever month it is from. It
+  // only differs from "Este mês" when something unpaid carries over from an
+  // earlier month — most visibly a fine that left them in the red.
+  const balance = calculateEarnings(personTasks.filter(isUnpaid)) + pendingBonus;
+  const hasCarryOver = Math.abs(balance - monthTotal) > 0.005;
 
   return (
     <motion.div
@@ -64,16 +70,24 @@ export default function PersonCard({ person, tasks, weekTasks, lastPaidAt = null
               <Trophy className="w-3 h-3 text-accent absolute top-2 right-2" />
             )}
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Esta semana</p>
-            <p className="text-xl font-bold text-primary mt-0.5">€{weekTotal.toFixed(2)}</p>
+            <p className={`text-xl font-bold mt-0.5 ${weekTotal < 0 ? 'text-red-600 dark:text-red-400' : 'text-primary'}`}>{formatMoney(weekTotal)}</p>
           </div>
           <div className="bg-muted rounded-xl p-3 relative">
             {pendingBonus > 0 && (
               <Trophy className="w-3 h-3 text-accent absolute top-2 right-2" />
             )}
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Este mês</p>
-            <p className="text-xl font-bold text-foreground mt-0.5">€{monthTotal.toFixed(2)}</p>
+            <p className={`text-xl font-bold mt-0.5 ${monthTotal < 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>{formatMoney(monthTotal)}</p>
           </div>
         </div>
+
+        {hasCarryOver && (
+          <p className={`text-[11px] mt-2 font-medium ${balance < 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>
+            {balance < 0
+              ? `Saldo total: ${formatMoney(balance)} — a dívida é descontada das próximas tarefas`
+              : `Saldo total a receber: ${formatMoney(balance)}`}
+          </p>
+        )}
 
         <div className="flex items-center gap-2 mt-3">
           <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">

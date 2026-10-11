@@ -226,6 +226,19 @@ export const TaskService = {
     if (error) throw error;
     return data ?? [];
   },
+
+  // Puts discharged failures back, for when the second half of an operation
+  // failed — e.g. the fine row could not be written after its three failures
+  // were already marked as spent. Better the child keeps the failures than
+  // loses them without paying either way.
+  async undoPenalty(ids) {
+    if (!ids?.length) return;
+    const { error } = await supabase
+      .from('tasks')
+      .update({ penalty_applied_at: null, penalty_applied_by: null })
+      .in('id', ids);
+    if (error) throw error;
+  },
 };
 
 export const ScheduledTaskService = {

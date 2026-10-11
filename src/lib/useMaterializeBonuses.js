@@ -7,7 +7,7 @@ import {
   WEEKLY_BONUS,
   BONUS_TASK_NAME,
   BONUS_COMPLETION_TYPE,
-  isBonusTask,
+  isChore,
   isWeeklyBonus,
   isAwaitingDecision,
   applyCancellations,
@@ -30,7 +30,7 @@ function planBonuses(tasks, weekKeys) {
   for (const weekKey of weekKeys) {
     for (const person of PEOPLE) {
       const personWeekTasks = tasks.filter(
-        t => t.person === person && t.week_key === weekKey && !isBonusTask(t)
+        t => t.person === person && t.week_key === weekKey && isChore(t)
       );
       if (personWeekTasks.length === 0) continue;
       // Wait for parents to decide on every photo before we materialize.
@@ -76,7 +76,7 @@ export function useMaterializeBonuses({ tasks, enabled = true }) {
 
     const pastWeeks = [...new Set(
       tasks
-        .filter(t => !isBonusTask(t) && t.week_key && t.week_key < currentWeekKey)
+        .filter(t => isChore(t) && t.week_key && t.week_key < currentWeekKey)
         .map(t => t.week_key)
     )].sort().slice(-MAX_WEEKS);
     if (pastWeeks.length === 0) return;

@@ -12,6 +12,25 @@ const corsHeaders = {
     "authorization, content-type, x-client-info, apikey",
 };
 
+// Kept in step with src/lib/taskHelpers.js
+const CARRYOVER_TASK_NAME = "Saldo transitado";
+const ADJUSTMENT_COMPLETION_TYPE = "adjustment";
+
+// ISO-8601 week of a "YYYY-MM-DD" date, anchored at UTC noon — the same
+// arithmetic as mark-missed-tasks, verified there against the app day by day.
+function weekKeyOf(dateStr: string): string {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  const dayIdx = (d.getUTCDay() + 6) % 7;
+  const thursday = new Date(d);
+  thursday.setUTCDate(d.getUTCDate() - dayIdx + 3);
+  const isoYear = thursday.getUTCFullYear();
+  const firstThursday = new Date(Date.UTC(isoYear, 0, 4, 12));
+  const ftIdx = (firstThursday.getUTCDay() + 6) % 7;
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - ftIdx + 3);
+  const week = Math.round((thursday.getTime() - firstThursday.getTime()) / (7 * 86400000)) + 1;
+  return `${isoYear}-W${String(week).padStart(2, "0")}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
@@ -41,6 +60,7 @@ Deno.serve(async (req) => {
       parts.find((p) => p.type === type)?.value || "";
     const year = get("year");
     const month = get("month");
+    const todayStr = `${year}-${month}-${get("day")}`;
     const cutoffDate = cleanAll ? "9999-12-31" : `${year}-${month}-01`;
     const mode = cleanAll ? "manual (all)" : "automatic";
 
@@ -57,12 +77,13 @@ Deno.serve(async (req) => {
       deleted_delegations: 0,
       deleted_cancellations: 0,
       deleted_extensions: 0,
+      carried_over: {} as Record<string, number>,
     };
 
     // 1. Fetch tasks to delete (to get photo URLs before deleting)
     const { data: oldTasks, error: fetchErr } = await supabase
       .from("tasks")
-      .select("id, photo_url")
+      .select("id, photo_url, person, value, approval_status, created_date")
       .lt("date", cutoffDate);
 
     if (fetchErr) {
@@ -100,6 +121,30 @@ Deno.serve(async (req) => {
         }
       }
 
+      // What is still owed to — or, after a fine, by — each child among the
+      // rows about to go. Counted exactly like the app's "A Pagar": decided
+      // (approved, or from before approvals existed) and created after the
+      // child's last payment. Rows still awaiting a decision are not money yet.
+      const { data: payments, error: payErr } = await supabase
+        .from("payments")
+        .select("person, paid_at");
+      if (payErr) throw payErr;
+      const lastPaidAt: Record<string, string> = {};
+      for (const p of payments ?? []) {
+        if (p.paid_at && (!lastPaidAt[p.person] || p.paid_at > lastPaidAt[p.person])) {
+          lastPaidAt[p.person] = p.paid_at;
+        }
+      }
+      const balance: Record<string, number> = {};
+      for (const t of oldTasks) {
+        const decided = !t.approval_status || t.approval_status === "approved";
+        if (!decided) continue;
+        const paid = lastPaidAt[t.person] && t.created_date &&
+          new Date(t.created_date) <= new Date(lastPaidAt[t.person]);
+        if (paid) continue;
+        balance[t.person] = (balance[t.person] ?? 0) + Number(t.value || 0);
+      }
+
       // 3. Delete tasks
       const { error: deleteTasksErr, count } = await supabase
         .from("tasks")
@@ -110,6 +155,33 @@ Deno.serve(async (req) => {
         console.error("Error deleting old tasks:", deleteTasksErr);
       } else {
         summary.deleted_tasks = count || 0;
+
+        // 3b. Carry each unpaid balance over as a single row, so the cleanup
+        // can never wipe out money — least of all a child's debt after a fine,
+        // which would otherwise just disappear with the rows that made it up.
+        const carry = Object.entries(balance)
+          .map(([person, amount]) => [person, Math.round(amount * 100) / 100] as const)
+          .filter(([, amount]) => Math.abs(amount) >= 0.01);
+        if (carry.length > 0) {
+          const { error: carryErr } = await supabase.from("tasks").insert(
+            carry.map(([person, amount]) => ({
+              person,
+              task_name: CARRYOVER_TASK_NAME,
+              completion_type: ADJUSTMENT_COMPLETION_TYPE,
+              value: amount,
+              date: todayStr,
+              end_time: null,
+              week_key: weekKeyOf(todayStr),
+              month_key: todayStr.slice(0, 7),
+              approval_status: "approved",
+            })),
+          );
+          if (carryErr) {
+            console.error("Error carrying balances over:", carryErr);
+          } else {
+            for (const [person, amount] of carry) summary.carried_over[person] = amount;
+          }
+        }
       }
     }
 

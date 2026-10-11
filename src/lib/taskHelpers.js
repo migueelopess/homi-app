@@ -10,7 +10,36 @@ export const COMPLETION_TYPES = {
   // rows in memory so all completion_type-based logic (failures, bonus,
   // earnings) treats a waived task as "not a failure" rather than a miss.
   cancelled: { label: 'Cancelada pelos pais', value: 0, emoji: '🚫', color: 'text-muted-foreground' },
+  // A movement of money that is not a chore: a fine, or a balance carried over
+  // by the monthly cleanup. The amount lives in `value` and may be negative.
+  adjustment: { label: 'Ajuste de saldo', value: 0, emoji: '💸', color: 'text-destructive' },
 };
+
+// ---------------------------------------------------------------
+// Money adjustments
+// ---------------------------------------------------------------
+
+// At three failures the parents choose between the child's punishment and
+// taking this much off their Homi balance. Either way the three failures are
+// discharged. The balance is allowed to go negative: payments only ever happen
+// when a child's balance is positive, so a debt simply stays unpaid until new
+// work outweighs it, and the next payment settles it together with the rest.
+export const FINE_AMOUNT = 10;
+export const FINE_TASK_NAME = 'Multa (3 falhas)';
+// Written by the monthly cleanup so an unpaid balance — a debt included — is
+// not wiped along with the rows that made it up.
+export const CARRYOVER_TASK_NAME = 'Saldo transitado';
+export const ADJUSTMENT_COMPLETION_TYPE = 'adjustment';
+
+export function isAdjustment(task) {
+  return task?.completion_type === ADJUSTMENT_COMPLETION_TYPE;
+}
+
+// "€4.00", or "−€10.00" for a debt.
+export function formatMoney(value) {
+  const n = Number(value) || 0;
+  return n < 0 ? `−€${Math.abs(n).toFixed(2)}` : `€${n.toFixed(2)}`;
+}
 
 export const WEEKLY_BONUS = 5.00;
 
@@ -41,6 +70,14 @@ export const DELEGATION_COOLDOWN_DAYS = 1;
 export function isBonusTask(task) {
   return task?.task_name === BONUS_TASK_NAME
       || task?.task_name === DELEGATION_BONUS_TASK_NAME;
+}
+
+// An actual piece of work — not a bonus and not a fine or carried balance.
+// Everything that counts or judges chores (the weekly bonus, "N tarefas",
+// ranking counts) must use this, or a fine would count as a completed chore
+// and could even earn its week a bonus.
+export function isChore(task) {
+  return !isBonusTask(task) && task?.completion_type !== 'adjustment';
 }
 
 // Only the weekly bonus — not the monthly delegation prize. The prize is dated
@@ -421,7 +458,7 @@ export function getMonthTasks(tasks, monthKey) {
 
 export function checkWeeklyBonus(tasks, person, weekKey) {
   const personWeekTasks = tasks.filter(
-    t => t.person === person && t.week_key === weekKey && !isBonusTask(t)
+    t => t.person === person && t.week_key === weekKey && isChore(t)
   );
   if (personWeekTasks.length === 0) return false;
   // If any task is still awaiting approval or being corrected, bonus is undecided.

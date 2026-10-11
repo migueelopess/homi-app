@@ -16,6 +16,7 @@ import {
   completionMoment, isWithinDeadline, getTaskValue,
   isBonusTask, isWeeklyBonus, isBonusBlock, BONUS_TASK_NAME, DELEGATION_BONUS_TASK_NAME,
   isChore, isAdjustment, formatMoney, checkWeeklyBonus, calculateEarnings, FINE_AMOUNT, FINE_TASK_NAME,
+  DELEGATION_CHAMPION_BONUS,
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
 } from '../src/lib/taskHelpers.js';
 
@@ -172,6 +173,9 @@ t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_
   t('a zero-value weekly row blocks the week and still counts as its bonus', isWeeklyBonus(block) && isBonusBlock(block));
   t('a real bonus is not a block', isBonusBlock(weekly), false);
 }
+
+// ===== Delegation prize =====
+t('the monthly delegation prize is 10.00', DELEGATION_CHAMPION_BONUS, 10);
 
 // ===== Fines and negative balances =====
 {

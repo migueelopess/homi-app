@@ -52,9 +52,10 @@ export const BONUS_COMPLETION_TYPE = 'bonus';
 // ---------------------------------------------------------------
 
 // Monthly prize for whoever completed the most tasks they took on from a
-// sibling. Sized to match the weekly bonus: worth chasing, without
-// distorting the €1-per-task economy.
-export const DELEGATION_CHAMPION_BONUS = 5.00;
+// sibling. Raised from €5 to €10 in October 2026 to make taking on — and
+// actually doing — a sibling's task more worth it. Prizes already awarded keep
+// the amount they were awarded with.
+export const DELEGATION_CHAMPION_BONUS = 10.00;
 export const DELEGATION_BONUS_TASK_NAME = 'Campeão das Delegações';
 
 // Breaking a task you accepted from a sibling costs double: you cleared

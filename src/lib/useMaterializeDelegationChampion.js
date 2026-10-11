@@ -41,7 +41,7 @@ export function useMaterializeDelegationChampion({ tasks, delegations, cancellat
     if (pastMonths.size === 0) return;
 
     // The plan is drafted from the cached list, which is capped — good enough
-    // to notice that something may need doing, never good enough to award €5
+    // to notice that something may need doing, never good enough to award a prize
     // on. Anything this pass wants to change is re-decided below against a
     // complete read of the months involved.
     const draft = planChampions(tasks, delegations, cancellations, pastMonths);

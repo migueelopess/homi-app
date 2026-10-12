@@ -63,7 +63,7 @@ export const DELEGATION_BONUS_TASK_NAME = 'Campeão das Delegações';
 //   pending ──a sibling accepts─────────────────▶ accepted
 //      │
 //      ├─every sibling refuses──────────────────▶ unanswered  (parents notified at once)
-//      └─the hour runs out with no "yes"────────▶ unanswered  (parents notified)
+//      └─the window runs out with no "yes"──────▶ unanswered  (parents notified)
 //                                                    ├─▶ parent_cancelled  task waived, no failure
 //                                                    └─▶ parent_rejected   "you could do it": the task
 //                                                                          is the delegator's again
@@ -72,9 +72,16 @@ export const DELEGATION_BONUS_TASK_NAME = 'Campeão das Delegações';
 // A request no one can answer used to sit "pending" all day, and when nobody
 // took it the child who asked for help got the failure anyway. Now siblings
 // accept or refuse; once they have all refused the parents are asked straight
-// away. A sibling who simply ignores it is treated as a "no" when the hour is
-// up, so a request can never hang on someone who did not open the app.
-export const DELEGATION_ACCEPT_WINDOW_MINUTES = 60;
+// away. A sibling who simply ignores it is treated as a "no" when the window
+// closes, so a request can never hang on someone who did not open the app.
+// The window was one hour at first and became three (October 2026) to give
+// siblings time to see the request and decide.
+export const DELEGATION_ACCEPT_WINDOW_MINUTES = 180;
+// "3 horas" — for every piece of copy that mentions the window.
+export const DELEGATION_ACCEPT_WINDOW_LABEL = (() => {
+  const hours = DELEGATION_ACCEPT_WINDOW_MINUTES / 60;
+  return hours === 1 ? '1 hora' : `${hours} horas`;
+})();
 export const DELEGATION_STATUS = {
   PENDING: 'pending',
   ACCEPTED: 'accepted',
@@ -89,8 +96,8 @@ export function delegationAcceptDeadline(delegation) {
 }
 
 // Can a sibling still accept this request? Only while pending and inside the
-// hour. The server flips it to `unanswered` within a few minutes of the hour
-// ending; until then this keeps the "Aceitar" button from outliving it.
+// window. The server flips it to `unanswered` within a few minutes of the
+// window ending; until then this keeps the "Aceitar" button from outliving it.
 export function isDelegationOpen(delegation, now = new Date()) {
   return delegation?.status === DELEGATION_STATUS.PENDING
     && !!delegation.created_at

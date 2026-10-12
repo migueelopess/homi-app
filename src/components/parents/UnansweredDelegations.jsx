@@ -8,7 +8,7 @@ import { TaskCancellationService, TaskDelegationService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { INVALIDATE } from '@/lib/queries';
 import {
-  PERSON_AVATARS, TASK_ICONS, DELEGATION_STATUS, DELEGATION_ACCEPT_WINDOW_MINUTES,
+  PERSON_AVATARS, TASK_ICONS, DELEGATION_STATUS, DELEGATION_ACCEPT_WINDOW_LABEL,
   delegationNeedsParents, getLocalDateStr, siblingAnswers,
 } from '@/lib/taskHelpers';
 
@@ -119,7 +119,7 @@ export default function UnansweredDelegations({ delegations = [], tasks = [], de
         <span className="ml-auto text-xs font-bold text-amber-700 dark:text-amber-300">{waiting.length}</span>
       </div>
       <p className="text-[11px] text-muted-foreground mb-3">
-        Disseram que não conseguiam e nenhum irmão aceitou (recusaram, ou passou {DELEGATION_ACCEPT_WINDOW_MINUTES / 60} hora sem resposta).
+        Disseram que não conseguiam e nenhum irmão aceitou (recusaram, ou passaram {DELEGATION_ACCEPT_WINDOW_LABEL} sem resposta).
         Cancelas a tarefa, ou tinham de a fazer?
       </p>
 

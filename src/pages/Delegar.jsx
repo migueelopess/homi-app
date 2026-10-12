@@ -116,7 +116,7 @@ export default function Delegar() {
     },
     onError: (err) => {
       if (err?.code === 'PGRST116') {
-        toast.error('Este pedido já não está disponível — foi aceite por outra pessoa ou passou a hora.');
+        toast.error('Este pedido já não está disponível — foi aceite por outra pessoa ou acabou o tempo para responder.');
       } else {
         toast.error('Erro ao aceitar o pedido.');
       }

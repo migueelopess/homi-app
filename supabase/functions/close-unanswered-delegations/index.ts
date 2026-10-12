@@ -1,22 +1,23 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Closes requests for help that no sibling accepted within the hour, and asks
+// Closes requests for help that no sibling accepted within the window (3 hours), and asks
 // the parents to decide.
 //
-// A child delegates a task they cannot do; siblings have one hour to take it.
+// A child delegates a task they cannot do; siblings have three hours to accept or refuse it.
 // When nobody does, the request moves to `unanswered` and the parents are told
 // — they then either cancel the task (no failure) or decide it was the child's
 // to do after all (see src/components/parents/UnansweredDelegations.jsx).
 //
 // Runs from pg_cron every 10 minutes, but the cron command only calls this when
-// a pending request is already past its hour, so most ticks never get here.
+// a pending request is already past its window, so most ticks never get here.
 // Kept in step with DELEGATION_ACCEPT_WINDOW_MINUTES in src/lib/taskHelpers.js.
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const ACCEPT_WINDOW_MINUTES = 60;
+const ACCEPT_WINDOW_MINUTES = 180;
+const ACCEPT_WINDOW_LABEL = ACCEPT_WINDOW_MINUTES === 60 ? "1 hora" : `${ACCEPT_WINDOW_MINUTES / 60} horas`;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -52,7 +53,7 @@ async function push(person: string, title: string, body: string, url: string, ta
   }
 }
 
-// Did the child end up doing it themselves within the hour? Then nobody needs
+// Did the child end up doing it themselves within the window? Then nobody needs
 // to decide anything. Matched on the occurrence's identity, with the old
 // name + deadline fallback for rows written before identities existed.
 async function wasDoneAnyway(d: Delegation): Promise<boolean> {
@@ -124,7 +125,7 @@ Deno.serve(async (req) => {
       const when = d.end_time ? ` (até às ${d.end_time})` : "";
       // Requests every sibling refused are closed the moment the last one
       // says no (by the app, via refuse_delegation); the ones that reach this
-      // point had at least one sibling who never answered within the hour.
+      // point had at least one sibling who never answered within the window.
       const refused = d.refused_by ?? [];
       const silent = PEOPLE.filter((p) => p !== d.from_person && !refused.includes(p));
       const answers = refused.length === 0
@@ -135,14 +136,14 @@ Deno.serve(async (req) => {
       await push(
         "__parents__",
         `🙋 ${d.from_person} precisa de uma decisão`,
-        `${d.from_person} não consegue fazer "${d.task_name}"${when}. ${answers} em 1 hora. Cancelas a tarefa ou tinha de a fazer?`,
+        `${d.from_person} não consegue fazer "${d.task_name}"${when}. ${answers} em ${ACCEPT_WINDOW_LABEL}. Cancelas a tarefa ou tinha de a fazer?`,
         "/pais",
         `delegation-unanswered-${d.id}`,
       );
       await push(
         d.from_person,
         `⌛ Ninguém aceitou: ${d.task_name}`,
-        "Passou a hora sem nenhum irmão aceitar. Os pais vão decidir se a cancelam.",
+        `Passaram ${ACCEPT_WINDOW_LABEL} sem nenhum irmão aceitar. Os pais vão decidir se a cancelam.`,
         "/",
         `delegation-unanswered-${d.id}`,
       );

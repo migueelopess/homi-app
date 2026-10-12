@@ -7,7 +7,7 @@ import { Clock, CheckCircle2, Circle, Star, ArrowRightLeft } from 'lucide-react'
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
-import { TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, sameTaskSlot, scheduledOccurrence, occasionalOccurrence, delegationOccurrence, settlesSlot } from '@/lib/taskHelpers';
+import { TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, DELEGATION_ACCEPT_WINDOW_LABEL, sameTaskSlot, scheduledOccurrence, occasionalOccurrence, delegationOccurrence, settlesSlot } from '@/lib/taskHelpers';
 import TaskCapture from './TaskCapture';
 import Portal from '@/components/layout/Portal';
 import { toast } from 'sonner';
@@ -158,7 +158,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
         sendPushNotification({
           person: sibling,
           title: '📥 Pedido de ajuda!',
-          body: `${person} precisa de ajuda com: ${taskName}. Aceita ou recusa — tens 1 hora.`,
+          body: `${person} precisa de ajuda com: ${taskName}. Aceita ou recusa — tens ${DELEGATION_ACCEPT_WINDOW_LABEL}.`,
           url: '/delegar',
           tag: `delegation-request-${data.id}`,
         });
@@ -415,7 +415,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
               </div>
             </div>
             <p className="text-sm text-muted-foreground mb-5">
-              Os teus irmãos podem aceitar ou recusar durante 1 hora. Quem aceitar fica com a tarefa e a recompensa. Se ninguém aceitar, os pais decidem se a cancelam.
+              Os teus irmãos podem aceitar ou recusar durante {DELEGATION_ACCEPT_WINDOW_LABEL}. Quem aceitar fica com a tarefa e a recompensa. Se ninguém aceitar, os pais decidem se a cancelam.
             </p>
             <button
               disabled={delegateMutation.isPending}

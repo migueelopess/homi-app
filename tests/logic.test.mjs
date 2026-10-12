@@ -18,7 +18,7 @@ import {
   isChore, isAdjustment, formatMoney, checkWeeklyBonus, calculateEarnings, FINE_AMOUNT, FINE_TASK_NAME,
   DELEGATION_CHAMPION_BONUS, completionTypeFor,
   isDelegationOpen, minutesLeftToAccept, delegationNeedsParents, DELEGATION_STATUS,
-  isDelegationOpenFor, siblingAnswers, siblingsOf,
+  isDelegationOpenFor, siblingAnswers, siblingsOf, DELEGATION_ACCEPT_WINDOW_LABEL,
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
 } from '../src/lib/taskHelpers.js';
 
@@ -198,11 +198,11 @@ t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_
                 task_type: 'scheduled', scheduled_task_id: 9, task_name: 'Maquina', task_date: '2026-10-12', end_time: '19:00' };
   const at = (h, m) => new Date(2026, 9, 12, h, m);
 
-  t('a request can be accepted inside the hour', isDelegationOpen(req, at(18, 59)));
-  t('a request cannot be accepted after the hour', isDelegationOpen(req, at(19, 0)), false);
+  t('a request can be accepted inside the 3-hour window', isDelegationOpen(req, at(20, 59)));
+  t('a request cannot be accepted once the 3 hours are up', isDelegationOpen(req, at(21, 0)), false);
   t('an accepted request is no longer open', isDelegationOpen({ ...req, status: 'accepted' }, at(18, 10)), false);
-  t('minutes left are rounded up', minutesLeftToAccept(req, at(18, 20)), 40);
-  t('minutes left never go negative', minutesLeftToAccept(req, at(20, 0)), 0);
+  t('minutes left are rounded up', minutesLeftToAccept(req, at(18, 20)), 160);
+  t('minutes left never go negative', minutesLeftToAccept(req, at(22, 0)), 0);
 
   const unanswered = { ...req, status: DELEGATION_STATUS.UNANSWERED };
   t('an unanswered request waits for the parents', delegationNeedsParents(unanswered, []));
@@ -217,6 +217,7 @@ t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_
 }
 
 // ===== Siblings accept or refuse =====
+t('the window is described as 3 horas', DELEGATION_ACCEPT_WINDOW_LABEL, '3 horas');
 {
   const created = new Date(2026, 9, 12, 18, 0);
   const at = new Date(2026, 9, 12, 18, 20);

@@ -66,7 +66,7 @@ Three functions run on `pg_cron` (jobs live in `cron.job`):
 | `daily-approval-summary` | `0 21,22 * * *` | nudges parents about tasks still awaiting approval |
 | `purge-cron-history` | `20 3 * * *` | trims `cron.job_run_details` to 7 days |
 | `drop-idle-realtime-slot` | `40 * * * *` | drops Realtime's wal2json slot if inactive and holding > 64 MB of WAL |
-| `close-unanswered-delegations` | `*/10 * * * *`, gated | closes delegation requests nobody accepted within the hour and asks the parents |
+| `close-unanswered-delegations` | `*/10 * * * *`, gated | closes delegation requests nobody accepted within 3 hours and asks the parents |
 
 `check-task-reminders` ticks every 15 minutes, 07:00-23:59 UTC (deadlines from
 08:30 to 23:30 Lisbon time, summer and winter), and the cron command only calls
@@ -80,17 +80,18 @@ while the app is open).
 
 Delegations have a lifecycle (`task_delegations.status`, documented next to
 `DELEGATION_STATUS` in [src/lib/taskHelpers.js](src/lib/taskHelpers.js)). Each
-sibling can accept or refuse within `DELEGATION_ACCEPT_WINDOW_MINUTES` (60):
+sibling can accept or refuse within `DELEGATION_ACCEPT_WINDOW_MINUTES` (180 — three hours):
 `pending` → `accepted` when one accepts; → `unanswered` the moment the last
 sibling refuses (the `refuse_delegation` SQL function does the append and the
 close in one statement, and the app then notifies the parents); or →
-`unanswered` when the hour runs out with someone still silent
+`unanswered` when the window runs out with someone still silent
 (`close-unanswered-delegations`). Parents resolve it on Relatório → Aprovações
 as `parent_cancelled` (tombstone, no failure) or `parent_rejected` (the task is
 the delegator's again). The window is enforced client-side
 (`isDelegationOpenFor`) and in `TaskDelegationService.accept`; the edge
 function's constant and the people listed inside `refuse_delegation` must stay
-in step with `src/lib/taskHelpers.js`.
+in step with `src/lib/taskHelpers.js`, and so must the `interval '3 hours'` in the
+`close-unanswered-delegations` cron gate.
 
 `purge-cron-history` is not optional. pg_cron never prunes its own run log, and
 with a job firing every five minutes it reached 48k rows / 73 MB — 83% of the

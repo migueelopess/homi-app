@@ -6,7 +6,8 @@ import { sendPushNotification } from '@/api/supabaseClient';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import {
   PERSON_AVATARS, TASK_ICONS, SIDNEY_TASKS, getLocalDateStr,
-  getAcceptBlock, getDelegationReward, isDelegationOpen, minutesLeftToAccept, DELEGATION_STATUS,
+  getAcceptBlock, getDelegationReward, isDelegationOpen, isDelegationOpenFor, minutesLeftToAccept,
+  refusedBy, DELEGATION_STATUS,
   DELEGATION_CHAMPION_BONUS, BROKEN_DELEGATION_WEIGHT,
 } from '@/lib/taskHelpers';
 import { Lock, Handshake, Clock, Inbox, Send, CheckCircle2, Trophy, ShieldAlert, AlertTriangle } from 'lucide-react';
@@ -64,6 +65,39 @@ export default function Delegar() {
   const { data: tasks = [] } = useQuery(tasksQuery());
   const { data: cancellations = [] } = useQuery(cancellationsQuery());
 
+  // Saying no. When this was the last sibling who could have said yes, the
+  // request is closed on the spot and the parents are asked right away —
+  // there is no point making them wait out the hour.
+  const refuseMutation = useMutation({
+    mutationFn: (d) => TaskDelegationService.refuse(d.id, person),
+    onSuccess: (row, d) => {
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.delegations });
+      if (!row) {
+        toast.info('Este pedido já não está disponível.');
+        return;
+      }
+      toast.success(`Recusaste "${d.task_name}"`);
+      if (row.status === DELEGATION_STATUS.UNANSWERED) {
+        const when = d.end_time ? ` (até às ${d.end_time})` : '';
+        sendPushNotification({
+          person: '__parents__',
+          title: `🙋 ${d.from_person} precisa de uma decisão`,
+          body: `${d.from_person} não consegue fazer "${d.task_name}"${when} e os irmãos recusaram. Cancelas a tarefa ou tinha de a fazer?`,
+          url: '/pais',
+          tag: `delegation-unanswered-${d.id}`,
+        });
+        sendPushNotification({
+          person: d.from_person,
+          title: `⌛ Ninguém pode ajudar: ${d.task_name}`,
+          body: 'Os irmãos recusaram. Os pais vão decidir se a cancelam.',
+          url: '/',
+          tag: `delegation-unanswered-${d.id}`,
+        });
+      }
+    },
+    onError: () => toast.error('Erro ao recusar o pedido.'),
+  });
+
   const acceptMutation = useMutation({
     mutationFn: ({ id, fromPerson, taskName }) =>
       TaskDelegationService.accept(id, person),
@@ -115,9 +149,9 @@ export default function Delegar() {
     );
   }
 
-  // Incoming requests: siblings' requests still inside their one-hour window
+  // Incoming requests: siblings' requests still open, that I have not refused
   const incomingRequests = delegations.filter(
-    d => isDelegationOpen(d) && d.from_person !== person && d.task_date >= today
+    d => isDelegationOpenFor(d, person) && d.task_date >= today
   );
 
   // My outgoing requests (today and recent)
@@ -217,16 +251,25 @@ export default function Delegar() {
                         )}
                       </div>
                       <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium mt-0.5">
-                        ⏱️ Faltam {minutesLeftToAccept(d)} min para aceitar
+                        ⏱️ Faltam {minutesLeftToAccept(d)} min para responder
                       </p>
                     </div>
-                    <button
-                      disabled={acceptMutation.isPending || acceptBlock.blocked}
-                      onClick={() => setConfirmAccept(d)}
-                      className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold flex-shrink-0 disabled:opacity-40"
-                    >
-                      Aceitar
-                    </button>
+                    <div className="flex flex-col gap-1.5 flex-shrink-0">
+                      <button
+                        disabled={acceptMutation.isPending || refuseMutation.isPending || acceptBlock.blocked}
+                        onClick={() => setConfirmAccept(d)}
+                        className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold disabled:opacity-40"
+                      >
+                        Aceitar
+                      </button>
+                      <button
+                        disabled={acceptMutation.isPending || refuseMutation.isPending}
+                        onClick={() => refuseMutation.mutate(d)}
+                        className="px-4 py-1.5 rounded-xl bg-muted text-muted-foreground text-xs font-semibold disabled:opacity-40"
+                      >
+                        Recusar
+                      </button>
+                    </div>
                   </div>
                 </Card>
               </motion.div>
@@ -304,6 +347,11 @@ export default function Delegar() {
                           <Clock className="w-3 h-3 text-muted-foreground" />
                           <span className="text-[11px] text-muted-foreground">Até às {d.end_time}</span>
                         </div>
+                      )}
+                      {d.status === DELEGATION_STATUS.PENDING && refusedBy(d).length > 0 && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {refusedBy(d).map(p => `${PERSON_AVATARS[p]} ${p}`).join(' e ')} recusou
+                        </p>
                       )}
                     </div>
                     <MyRequestStatus delegation={d} />

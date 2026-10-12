@@ -18,6 +18,7 @@ import {
   isChore, isAdjustment, formatMoney, checkWeeklyBonus, calculateEarnings, FINE_AMOUNT, FINE_TASK_NAME,
   DELEGATION_CHAMPION_BONUS, completionTypeFor,
   isDelegationOpen, minutesLeftToAccept, delegationNeedsParents, DELEGATION_STATUS,
+  isDelegationOpenFor, siblingAnswers, siblingsOf,
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
 } from '../src/lib/taskHelpers.js';
 
@@ -213,6 +214,23 @@ t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_
   t('a sibling doing their own same-named task does not count',
     delegationNeedsParents(unanswered, [{ ...doneItself, person: 'Pedro', scheduled_task_id: 33 }]));
   t('a failure is not "done"', delegationNeedsParents(unanswered, [{ ...doneItself, completion_type: 'not_done' }]));
+}
+
+// ===== Siblings accept or refuse =====
+{
+  const created = new Date(2026, 9, 12, 18, 0);
+  const at = new Date(2026, 9, 12, 18, 20);
+  const req = { status: 'pending', created_at: created.toISOString(), from_person: 'Pedro', refused_by: ['Miguel'] };
+  t('the siblings of Pedro are Ines and Miguel', siblingsOf('Pedro').join(','), 'Inês,Miguel');
+  t('a sibling who refused no longer sees the request', isDelegationOpenFor(req, 'Miguel', at), false);
+  t('the other sibling still can answer', isDelegationOpenFor(req, 'Inês', at));
+  t('nobody answers their own request', isDelegationOpenFor(req, 'Pedro', at), false);
+  t('a request with no refusals yet is open to both', isDelegationOpenFor({ ...req, refused_by: [] }, 'Miguel', at));
+  t('older rows without refused_by still work', isDelegationOpenFor({ ...req, refused_by: undefined }, 'Miguel', at));
+  const partial = siblingAnswers(req);
+  t('answers: who refused', partial.refused.join(','), 'Miguel');
+  t('answers: who stayed silent', partial.silent.join(','), 'Inês');
+  t('answers: all refused', siblingAnswers({ ...req, refused_by: ['Miguel', 'Inês'] }).silent.length, 0);
 }
 
 // ===== Delegation prize =====

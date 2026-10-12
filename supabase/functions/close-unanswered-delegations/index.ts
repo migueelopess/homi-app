@@ -24,9 +24,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, content-type, x-client-info, apikey",
 };
 
+// Kept in step with PEOPLE in src/lib/taskHelpers.js
+const PEOPLE = ["Inês", "Pedro", "Miguel"];
+
 type Delegation = {
   id: string;
   from_person: string;
+  refused_by: string[] | null;
   task_type: string;
   scheduled_task_id: number | null;
   occasional_task_id: number | null;
@@ -80,7 +84,7 @@ Deno.serve(async (req) => {
 
     const { data: overdue, error } = await supabase
       .from("task_delegations")
-      .select("id, from_person, task_type, scheduled_task_id, occasional_task_id, task_name, task_date, end_time")
+      .select("id, from_person, refused_by, task_type, scheduled_task_id, occasional_task_id, task_name, task_date, end_time")
       .eq("status", "pending")
       .lt("created_at", cutoff);
     if (error) throw error;
@@ -118,17 +122,27 @@ Deno.serve(async (req) => {
 
     for (const d of closed) {
       const when = d.end_time ? ` (até às ${d.end_time})` : "";
+      // Requests every sibling refused are closed the moment the last one
+      // says no (by the app, via refuse_delegation); the ones that reach this
+      // point had at least one sibling who never answered within the hour.
+      const refused = d.refused_by ?? [];
+      const silent = PEOPLE.filter((p) => p !== d.from_person && !refused.includes(p));
+      const answers = refused.length === 0
+        ? "Nenhum irmão respondeu"
+        : silent.length === 0
+          ? "Os irmãos recusaram"
+          : `${refused.join(" e ")} recusou e ${silent.join(" e ")} não respondeu`;
       await push(
         "__parents__",
         `🙋 ${d.from_person} precisa de uma decisão`,
-        `${d.from_person} não consegue fazer "${d.task_name}"${when} e nenhum irmão aceitou. Cancelas a tarefa ou tinha de a fazer?`,
+        `${d.from_person} não consegue fazer "${d.task_name}"${when}. ${answers} em 1 hora. Cancelas a tarefa ou tinha de a fazer?`,
         "/pais",
         `delegation-unanswered-${d.id}`,
       );
       await push(
         d.from_person,
         `⌛ Ninguém aceitou: ${d.task_name}`,
-        "Passou a hora e nenhum irmão aceitou. Os pais vão decidir se a cancelam.",
+        "Passou a hora sem nenhum irmão aceitar. Os pais vão decidir se a cancelam.",
         "/",
         `delegation-unanswered-${d.id}`,
       );

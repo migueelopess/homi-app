@@ -60,18 +60,20 @@ export const DELEGATION_BONUS_TASK_NAME = 'Campeão das Delegações';
 
 // Lifecycle of a delegation (task_delegations.status):
 //
-//   pending ──accepted within the hour──────────▶ accepted
+//   pending ──a sibling accepts─────────────────▶ accepted
 //      │
-//      └─nobody accepts within the hour─────────▶ unanswered  (parents notified)
+//      ├─every sibling refuses──────────────────▶ unanswered  (parents notified at once)
+//      └─the hour runs out with no "yes"────────▶ unanswered  (parents notified)
 //                                                    ├─▶ parent_cancelled  task waived, no failure
 //                                                    └─▶ parent_rejected   "you could do it": the task
 //                                                                          is the delegator's again
 //   expired — legacy, and the overnight safety net for anything still pending.
 //
 // A request no one can answer used to sit "pending" all day, and when nobody
-// took it the child who asked for help got the failure anyway. Now the window
-// is short, and an unanswered request goes to the parents, who decide whether
-// the task is waived or was the child's to do after all.
+// took it the child who asked for help got the failure anyway. Now siblings
+// accept or refuse; once they have all refused the parents are asked straight
+// away. A sibling who simply ignores it is treated as a "no" when the hour is
+// up, so a request can never hang on someone who did not open the app.
 export const DELEGATION_ACCEPT_WINDOW_MINUTES = 60;
 export const DELEGATION_STATUS = {
   PENDING: 'pending',
@@ -93,6 +95,32 @@ export function isDelegationOpen(delegation, now = new Date()) {
   return delegation?.status === DELEGATION_STATUS.PENDING
     && !!delegation.created_at
     && delegationAcceptDeadline(delegation) > now;
+}
+
+// Siblings who said no to this request (task_delegations.refused_by).
+export function refusedBy(delegation) {
+  return Array.isArray(delegation?.refused_by) ? delegation.refused_by : [];
+}
+
+// Everyone who could take this request: every child but the one asking.
+export function siblingsOf(person) {
+  return PEOPLE.filter(p => p !== person);
+}
+
+// Can *this* child still answer it? Open, not their own, and not one they
+// already refused.
+export function isDelegationOpenFor(delegation, person, now = new Date()) {
+  return isDelegationOpen(delegation, now)
+    && delegation.from_person !== person
+    && !refusedBy(delegation).includes(person);
+}
+
+// How the siblings answered a request that closed without a "yes": who said no
+// and who never answered. Parents see this when deciding.
+export function siblingAnswers(delegation) {
+  const refused = refusedBy(delegation);
+  const silent = siblingsOf(delegation.from_person).filter(p => !refused.includes(p));
+  return { refused, silent };
 }
 
 export function minutesLeftToAccept(delegation, now = new Date()) {

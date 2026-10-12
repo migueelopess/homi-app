@@ -79,13 +79,18 @@ A task due outside 08:30-23:30 gets no push reminder (the in-app one still fires
 while the app is open).
 
 Delegations have a lifecycle (`task_delegations.status`, documented next to
-`DELEGATION_STATUS` in [src/lib/taskHelpers.js](src/lib/taskHelpers.js)):
-`pending` → `accepted` if a sibling takes it within `DELEGATION_ACCEPT_WINDOW_MINUTES`
-(60); otherwise `close-unanswered-delegations` moves it to `unanswered` and
-notifies the parents, who resolve it on Relatório → Aprovações as
-`parent_cancelled` (tombstone, no failure) or `parent_rejected` (the task is the
-delegator's again). The window is enforced client-side (`isDelegationOpen`) and
-in `TaskDelegationService.accept`; the edge function's own constant must match.
+`DELEGATION_STATUS` in [src/lib/taskHelpers.js](src/lib/taskHelpers.js)). Each
+sibling can accept or refuse within `DELEGATION_ACCEPT_WINDOW_MINUTES` (60):
+`pending` → `accepted` when one accepts; → `unanswered` the moment the last
+sibling refuses (the `refuse_delegation` SQL function does the append and the
+close in one statement, and the app then notifies the parents); or →
+`unanswered` when the hour runs out with someone still silent
+(`close-unanswered-delegations`). Parents resolve it on Relatório → Aprovações
+as `parent_cancelled` (tombstone, no failure) or `parent_rejected` (the task is
+the delegator's again). The window is enforced client-side
+(`isDelegationOpenFor`) and in `TaskDelegationService.accept`; the edge
+function's constant and the people listed inside `refuse_delegation` must stay
+in step with `src/lib/taskHelpers.js`.
 
 `purge-cron-history` is not optional. pg_cron never prunes its own run log, and
 with a job firing every five minutes it reached 48k rows / 73 MB — 83% of the

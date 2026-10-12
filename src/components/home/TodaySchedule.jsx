@@ -158,7 +158,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
         sendPushNotification({
           person: sibling,
           title: '📥 Pedido de ajuda!',
-          body: `${person} precisa de ajuda com: ${taskName}. Tens 1 hora para aceitar.`,
+          body: `${person} precisa de ajuda com: ${taskName}. Aceita ou recusa — tens 1 hora.`,
           url: '/delegar',
           tag: `delegation-request-${data.id}`,
         });
@@ -415,7 +415,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
               </div>
             </div>
             <p className="text-sm text-muted-foreground mb-5">
-              Tens a certeza que queres pedir ajuda aos teus irmãos? A tarefa será transferida para quem aceitar, incluindo a recompensa.
+              Os teus irmãos podem aceitar ou recusar durante 1 hora. Quem aceitar fica com a tarefa e a recompensa. Se ninguém aceitar, os pais decidem se a cancelam.
             </p>
             <button
               disabled={delegateMutation.isPending}

@@ -9,8 +9,16 @@ import { sendPushNotification } from '@/api/supabaseClient';
 import { INVALIDATE } from '@/lib/queries';
 import {
   PERSON_AVATARS, TASK_ICONS, DELEGATION_STATUS, DELEGATION_ACCEPT_WINDOW_MINUTES,
-  delegationNeedsParents, getLocalDateStr,
+  delegationNeedsParents, getLocalDateStr, siblingAnswers,
 } from '@/lib/taskHelpers';
+
+// "Pedro recusou · Inês não respondeu", "os irmãos recusaram", "ninguém respondeu".
+function answersText(delegation) {
+  const { refused, silent } = siblingAnswers(delegation);
+  if (silent.length === 0) return 'os irmãos recusaram';
+  if (refused.length === 0) return 'ninguém respondeu';
+  return `${refused.join(' e ')} recusou · ${silent.join(' e ')} não respondeu`;
+}
 
 /**
  * Requests for help that no sibling accepted within the hour.
@@ -111,7 +119,7 @@ export default function UnansweredDelegations({ delegations = [], tasks = [], de
         <span className="ml-auto text-xs font-bold text-amber-700 dark:text-amber-300">{waiting.length}</span>
       </div>
       <p className="text-[11px] text-muted-foreground mb-3">
-        Disseram que não conseguiam e nenhum irmão aceitou em {DELEGATION_ACCEPT_WINDOW_MINUTES / 60} hora.
+        Disseram que não conseguiam e nenhum irmão aceitou (recusaram, ou passou {DELEGATION_ACCEPT_WINDOW_MINUTES / 60} hora sem resposta).
         Cancelas a tarefa, ou tinham de a fazer?
       </p>
 
@@ -131,7 +139,7 @@ export default function UnansweredDelegations({ delegations = [], tasks = [], de
                     <strong>{d.task_name}</strong>
                   </p>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
-                    {dayLabel}{d.end_time ? ` · até às ${d.end_time}` : ''} · ninguém aceitou
+                    {dayLabel}{d.end_time ? ` · até às ${d.end_time}` : ''} · {answersText(d)}
                   </p>
                 </div>
                 {thisOneBusy && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}

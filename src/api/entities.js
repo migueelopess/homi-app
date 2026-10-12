@@ -355,6 +355,17 @@ export const TaskDelegationService = {
     return data;
   },
 
+  // A sibling says no. Done in one statement on the server (refuse_delegation,
+  // migration 026) so two siblings refusing at the same moment cannot lose
+  // each other's answer; when every sibling has refused, the same call closes
+  // the request as 'unanswered'. Returns the updated row, or null if the
+  // request was no longer pending.
+  async refuse(id, person) {
+    const { data, error } = await supabase.rpc('refuse_delegation', { p_id: id, p_person: person });
+    if (error) throw error;
+    return data?.id ? data : null;
+  },
+
   // The parents' answer to a request nobody accepted: 'parent_cancelled' or
   // 'parent_rejected'. Guarded on 'unanswered' so two parents deciding at once
   // cannot both act; returns null when it was already decided.

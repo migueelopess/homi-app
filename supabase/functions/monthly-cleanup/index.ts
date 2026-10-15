@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
     // 1. Fetch tasks to delete (to get photo URLs before deleting)
     const { data: oldTasks, error: fetchErr } = await supabase
       .from("tasks")
-      .select("id, photo_url, person, value, approval_status, created_date")
+      .select("id, photo_url, person, value, approval_status, created_date, approved_at")
       .lt("date", cutoffDate);
 
     if (fetchErr) {
@@ -139,8 +139,10 @@ Deno.serve(async (req) => {
       for (const t of oldTasks) {
         const decided = !t.approval_status || t.approval_status === "approved";
         if (!decided) continue;
-        const paid = lastPaidAt[t.person] && t.created_date &&
-          new Date(t.created_date) <= new Date(lastPaidAt[t.person]);
+        // Same rule as isTaskPaid: paid if decided before the last payment.
+        const decidedAt = t.approved_at || t.created_date;
+        const paid = lastPaidAt[t.person] && decidedAt &&
+          new Date(decidedAt) <= new Date(lastPaidAt[t.person]);
         if (paid) continue;
         balance[t.person] = (balance[t.person] ?? 0) + Number(t.value || 0);
       }

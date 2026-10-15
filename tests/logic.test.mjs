@@ -18,7 +18,7 @@ import {
   isChore, isAdjustment, formatMoney, checkWeeklyBonus, calculateEarnings, FINE_AMOUNT, FINE_TASK_NAME,
   DELEGATION_CHAMPION_BONUS, completionTypeFor,
   isDelegationOpen, minutesLeftToAccept, delegationNeedsParents, DELEGATION_STATUS,
-  isDelegationOpenFor, siblingAnswers, siblingsOf, DELEGATION_ACCEPT_WINDOW_LABEL,
+  isDelegationOpenFor, siblingAnswers, siblingsOf, DELEGATION_ACCEPT_WINDOW_LABEL, isTaskPaid,
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
 } from '../src/lib/taskHelpers.js';
 
@@ -232,6 +232,20 @@ t('the window is described as 3 horas', DELEGATION_ACCEPT_WINDOW_LABEL, '3 horas
   t('answers: who refused', partial.refused.join(','), 'Miguel');
   t('answers: who stayed silent', partial.silent.join(','), 'Inês');
   t('answers: all refused', siblingAnswers({ ...req, refused_by: ['Miguel', 'Inês'] }).silent.length, 0);
+}
+
+// ===== What counts as paid =====
+{
+  const paidAt = '2026-10-11T22:56:00Z';
+  t('approved before the payment: paid',
+    isTaskPaid({ created_date: '2026-10-04T00:00:00Z', approved_at: '2026-10-05T10:00:00Z' }, paidAt));
+  t('submitted before but approved after the payment: NOT paid',
+    isTaskPaid({ created_date: '2026-10-04T00:00:00Z', approved_at: '2026-10-13T10:00:00Z' }, paidAt), false);
+  t('still waiting for a decision: NOT paid',
+    isTaskPaid({ created_date: '2026-10-04T00:00:00Z', approved_at: null, approval_status: 'needs_revision' }, paidAt), false);
+  t('a bonus with no approval time uses its creation time',
+    isTaskPaid({ created_date: '2026-10-11T20:00:00Z' }, paidAt));
+  t('nothing is paid before the first payment', isTaskPaid({ created_date: '2026-10-04T00:00:00Z' }, null), false);
 }
 
 // ===== Delegation prize =====

@@ -524,15 +524,23 @@ export function getDelegationReward(delegation) {
   return getTaskValue(delegation?.task_name, 'on_time_no_reminder', { delegated: true });
 }
 
-// A completed task is "paid" once the parent paid the child for work done up
-// to a later moment. The boundary is a timestamp (the payment instant), not a
-// calendar day: a task finished at 19:00 is NOT covered by a payment made at
-// 14:00 the same day, even though both share a date. `lastPaidAt` is the
-// person's most recent payments.paid_at; `task.created_date` is when the task
-// row was inserted (i.e. when the child submitted it).
+// A completed task is "paid" once the parent paid the child after its reward
+// was decided. The boundary is a timestamp (the payment instant), not a
+// calendar day: a task approved at 19:00 is NOT covered by a payment made at
+// 14:00 the same day, even though both share a date.
+//
+// The moment that counts is the approval, not the submission. A payment only
+// ever includes decided tasks — anything still pending or sent back for a fix
+// is left out of "A Pagar" — so a task submitted before a payment but approved
+// after it was never in that payment. Judging by `created_date` called it paid
+// all the same, and the child silently lost it. Rows that were never approved
+// as such (bonuses, legacy rows) fall back to `created_date`.
 export function isTaskPaid(task, lastPaidAt) {
-  if (!lastPaidAt || !task?.created_date) return false;
-  return new Date(task.created_date) <= new Date(lastPaidAt);
+  // Not decided yet, so it cannot have been in any payment.
+  if (task?.approval_status === 'pending' || task?.approval_status === 'needs_revision') return false;
+  const decidedAt = task?.approved_at || task?.created_date;
+  if (!lastPaidAt || !decidedAt) return false;
+  return new Date(decidedAt) <= new Date(lastPaidAt);
 }
 
 // Tasks pending approval don't yet count toward earnings.

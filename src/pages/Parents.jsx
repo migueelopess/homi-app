@@ -111,10 +111,30 @@ export default function Parents() {
       }));
       return PaymentService.createBulk(rows);
     },
-    onSuccess: (_, vars) => {
+    onSuccess: async (_, vars) => {
       queryClient.invalidateQueries({ queryKey: INVALIDATE.payments });
       const label = vars.persons.length === 1 ? vars.persons[0] : 'todos os filhos';
       toast.success(`Pagamento registado para ${label}`);
+
+      // Paying is the cleanup: what this payment settled is deleted on the
+      // server — rows, photos and the day-only data around them — so nobody
+      // has to press "Limpeza" afterwards. The nightly run of the same
+      // function catches it if this call is lost.
+      try {
+        const { data, error } = await supabase.functions.invoke('purge-paid', {
+          body: { persons: vars.persons },
+        });
+        if (error) throw error;
+        if (data?.tarefas_apagadas > 0) {
+          toast.success(`${data.tarefas_apagadas} tarefas pagas apagadas para libertar espaço`);
+        }
+      } catch (err) {
+        console.error('purge-paid failed (the nightly run will retry):', err);
+      } finally {
+        for (const queryKey of [INVALIDATE.tasks, INVALIDATE.pendingTasks, INVALIDATE.occasionalTasks]) {
+          queryClient.invalidateQueries({ queryKey });
+        }
+      }
     },
     onError: (err) => {
       console.error('Payment failed:', err);
@@ -366,7 +386,7 @@ export default function Parents() {
                       })}
                     </ul>
                     <p className="text-xs text-muted-foreground">
-                      Todas as tarefas até hoje ({format(new Date(), 'd MMM yyyy', { locale: pt })}) ficam marcadas como pagas.
+                      As tarefas pagas são apagadas da app (e as fotos) para libertar espaço.
                     </p>
                   </div>
                 </AlertDialogDescription>
@@ -420,7 +440,7 @@ export default function Parents() {
                             Vai registar o pagamento de <strong>€{totalAmt.toFixed(2)}</strong> ao {person}.
                             {olderAmt > 0 && ` Inclui €${olderAmt.toFixed(2)} de ${olderLabel}.`}
                             {olderAmt < 0 && ` Já com a dívida de €${Math.abs(olderAmt).toFixed(2)} descontada.`}
-                            {' '}Todas as tarefas até hoje ({format(new Date(), 'd MMM yyyy', { locale: pt })}) ficam marcadas como pagas.
+                            {' '}As tarefas pagas são apagadas da app (e as fotos) para libertar espaço.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -604,7 +624,7 @@ export default function Parents() {
       <Card className="p-4 mt-4 mb-4">
         <h3 className="text-sm font-bold text-foreground mb-2">🧹 Limpeza de Dados</h3>
         <p className="text-xs text-muted-foreground mb-3">
-          Apaga tarefas, fotos, lembretes, notificações, delegações, cancelamentos e extensões. Rotinas e tarefas agendadas não são afetadas. Penalizações e ranking de delegações resetam a 0.
+          Cada pagamento já apaga sozinho o que pagou. Isto vai mais longe: apaga todas as tarefas, fotos, lembretes, notificações, delegações, cancelamentos e extensões. Rotinas e tarefas agendadas não são afetadas. Penalizações e ranking de delegações resetam a 0.
         </p>
         <AlertDialog>
           <AlertDialogTrigger asChild>

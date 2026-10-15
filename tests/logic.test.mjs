@@ -22,6 +22,8 @@ import {
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
 } from '../src/lib/taskHelpers.js';
 
+import { planPurge } from '../supabase/functions/purge-paid/plan.ts';
+
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 
 let pass = 0, fail = 0;
@@ -246,6 +248,50 @@ t('the window is described as 3 horas', DELEGATION_ACCEPT_WINDOW_LABEL, '3 horas
   t('a bonus with no approval time uses its creation time',
     isTaskPaid({ created_date: '2026-10-11T20:00:00Z' }, paidAt));
   t('nothing is paid before the first payment', isTaskPaid({ created_date: '2026-10-04T00:00:00Z' }, null), false);
+}
+
+// ===== Paying is the cleanup (supabase/functions/purge-paid/plan.ts) =====
+{
+  const paidAt = '2026-10-11T22:56:00Z';
+  let n = 0;
+  const row = (over) => ({ id: ++n, person: 'Pedro', task_name: 'Mesa jantar', date: '2026-10-05', end_time: '19:00',
+    week_key: '2026-W41', completion_type: 'on_time_no_reminder', approval_status: 'approved',
+    approved_at: '2026-10-06T10:00:00Z', created_date: '2026-10-05T18:00:00Z', delegation_id: null,
+    scheduled_task_id: 20, occasional_task_id: null, photo_url: null, ...over });
+
+  const paid       = row({});
+  const unpaid     = row({ approved_at: '2026-10-13T10:00:00Z', created_date: '2026-10-13T09:00:00Z', date: '2026-10-13', week_key: '2026-W42' });
+  const lateApprov = row({ approved_at: '2026-10-13T10:00:00Z' }); // submitted before, approved after the payment
+  const undecided  = row({ approval_status: 'needs_revision', approved_at: null });
+  const failure    = row({ completion_type: 'not_done' });
+  const delegRow   = row({ delegation_id: 'd-recent', date: '2026-10-05' });
+  const oldDeleg   = row({ delegation_id: 'd-old', date: '2026-08-20', week_key: '2026-W34' });
+  const legacyDeleg = row({ scheduled_task_id: null, date: '2026-10-05', end_time: '19:00' }); // pre-identity row
+  const prize      = row({ task_name: 'Campeão das Delegações', completion_type: 'bonus', week_key: '2026-W40' });
+  const bonusEmpty = row({ task_name: 'Bónus Semanal', completion_type: 'bonus', week_key: '2026-W39', value: 5 });
+  const bonusBusy  = row({ task_name: 'Bónus Semanal', completion_type: 'bonus', week_key: '2026-W41', value: 5 });
+  const fine       = row({ task_name: 'Multa (3 falhas)', completion_type: 'adjustment', week_key: '2026-W40' });
+  const rows = [paid, unpaid, lateApprov, undecided, failure, delegRow, oldDeleg, legacyDeleg, prize, bonusEmpty, bonusBusy, fine];
+  const delegations = [
+    { id: 'd-recent', to_person: 'Pedro', status: 'accepted', task_name: 'Mesa jantar', task_date: '2026-10-05', end_time: '19:00' },
+    { id: 'd-old', to_person: 'Pedro', status: 'accepted', task_name: 'Mesa jantar', task_date: '2026-08-20', end_time: '19:00' },
+  ];
+  const plan = planPurge(rows, delegations, paidAt, '2026-09-01');
+  const gone = new Set([...plan.chores, ...plan.adjustments, ...plan.bonuses].map(r => r.id));
+
+  t('purge: a paid chore goes', gone.has(paid.id));
+  t('purge: an unpaid chore stays', gone.has(unpaid.id), false);
+  t('purge: approved only after the payment stays', gone.has(lateApprov.id), false);
+  t('purge: a task sent back for a fix stays', gone.has(undecided.id), false);
+  t('purge: failures stay', gone.has(failure.id), false);
+  t('purge: a row fulfilling a recent delegation stays', gone.has(delegRow.id), false);
+  t('purge: a row fulfilling an old delegation goes', gone.has(oldDeleg.id));
+  t('purge: a pre-identity row matching a recent delegation by name+hour stays', gone.has(legacyDeleg.id), false);
+  t('purge: delegation prizes are never touched', gone.has(prize.id), false);
+  t('purge: the bonus of a week left empty goes', gone.has(bonusEmpty.id));
+  t('purge: the bonus of a week that still has rows stays (or it would be paid again)', gone.has(bonusBusy.id), false);
+  t('purge: a paid fine goes', gone.has(fine.id));
+  t('purge: nothing goes before the first payment', planPurge(rows, delegations, null, '2026-09-01').chores.length, 0);
 }
 
 // ===== Delegation prize =====

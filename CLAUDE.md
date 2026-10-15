@@ -67,6 +67,7 @@ Three functions run on `pg_cron` (jobs live in `cron.job`):
 | `purge-cron-history` | `20 3 * * *` | trims `cron.job_run_details` to 7 days |
 | `drop-idle-realtime-slot` | `40 * * * *` | drops Realtime's wal2json slot if inactive and holding > 64 MB of WAL |
 | `close-unanswered-delegations` | `*/10 * * * *`, gated | closes delegation requests nobody accepted within 3 hours and asks the parents |
+| `purge-paid` | `30 3 * * *` (+ after every payment) | deletes what a payment settled: paid rows, their photos, day-only data |
 
 `check-task-reminders` ticks every 15 minutes, 07:00-23:59 UTC (deadlines from
 08:30 to 23:30 Lisbon time, summer and winter), and the cron command only calls
@@ -92,6 +93,18 @@ the delegator's again). The window is enforced client-side
 function's constant and the people listed inside `refuse_delegation` must stay
 in step with `src/lib/taskHelpers.js`, and so must the `interval '3 hours'` in the
 `close-unanswered-delegations` cron gate.
+
+Paying is the cleanup. Right after the parents record a payment the app calls
+`purge-paid` for those children, and it runs nightly as a safety net. What it
+may delete is decided by the pure function in
+[supabase/functions/purge-paid/plan.ts](supabase/functions/purge-paid/plan.ts)
+(tested from `npm test`): paid chores and fines, their photos, and weekly
+bonuses of weeks left empty. It never touches undecided tasks, failures, rows
+fulfilling an accepted delegation from the last month or so (the overnight
+broken-delegation check and the monthly prize read them), prizes, or the bonus
+of any week that still has rows — removing that would get it awarded again.
+"Paid" means approved before the child's last payment (`isTaskPaid`), not
+submitted before it. The manual "Limpeza" button still wipes everything.
 
 `purge-cron-history` is not optional. pg_cron never prunes its own run log, and
 with a job firing every five minutes it reached 48k rows / 73 MB — 83% of the

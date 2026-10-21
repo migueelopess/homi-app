@@ -8,26 +8,29 @@ import { TaskCancellationService, TaskDelegationService } from '@/api/entities';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { INVALIDATE } from '@/lib/queries';
 import {
-  PERSON_AVATARS, TASK_ICONS, DELEGATION_STATUS, DELEGATION_ACCEPT_WINDOW_LABEL,
+  PERSON_AVATARS, TASK_ICONS, DELEGATION_STATUS, DELEGATION_PARENTS_NOTICE_LABEL,
   delegationNeedsParents, getLocalDateStr, siblingAnswers,
 } from '@/lib/taskHelpers';
 
-// "Pedro recusou · Inês não respondeu", "os irmãos recusaram", "ninguém respondeu".
+// "Pedro recusou · Inês ainda não respondeu", "os irmãos recusaram",
+// "ninguém respondeu ainda" — the request is still open while this shows.
 function answersText(delegation) {
   const { refused, silent } = siblingAnswers(delegation);
   if (silent.length === 0) return 'os irmãos recusaram';
-  if (refused.length === 0) return 'ninguém respondeu';
-  return `${refused.join(' e ')} recusou · ${silent.join(' e ')} não respondeu`;
+  if (refused.length === 0) return 'ninguém respondeu ainda';
+  return `${refused.join(' e ')} recusou · ${silent.join(' e ')} ainda não respondeu`;
 }
 
 /**
- * Requests for help that no sibling accepted within the window.
+ * Requests for help that no sibling has accepted after 3 hours (or that they
+ * all refused).
  *
- * The child said they could not do the task and nobody took it over, so the
- * parents decide: either the task is cancelled (no failure for anyone), or the
- * child could have done it after all and it is theirs again — left undone, it
- * becomes an ordinary failure overnight. Only the request's own day is shown
- * (see delegationNeedsParents): one left undecided stays the child's task.
+ * The child said they could not do the task and nobody has taken it over, so
+ * the parents can decide: either the task is cancelled (no failure for
+ * anyone), or the child could have done it after all and it is theirs again —
+ * left undone, it becomes an ordinary failure overnight. Until they decide a
+ * sibling can still accept it, which takes it off this list; left undecided
+ * and untaken, it is waived overnight (see delegationNeedsParents).
  */
 export default function UnansweredDelegations({ delegations = [], tasks = [], cancellations = [], deciderId }) {
   const queryClient = useQueryClient();
@@ -118,8 +121,8 @@ export default function UnansweredDelegations({ delegations = [], tasks = [], ca
         <span className="ml-auto text-xs font-bold text-amber-700 dark:text-amber-300">{waiting.length}</span>
       </div>
       <p className="text-[11px] text-muted-foreground mb-3">
-        Disseram que não conseguiam e nenhum irmão aceitou (recusaram, ou passaram {DELEGATION_ACCEPT_WINDOW_LABEL} sem resposta).
-        Cancelas a tarefa, ou tinham de a fazer?
+        Disseram que não conseguiam e nenhum irmão aceitou ainda (recusaram, ou passaram {DELEGATION_PARENTS_NOTICE_LABEL}).
+        Os irmãos ainda podem aceitar. Se ninguém aceitar e não decidires, no fim do dia é cancelada sem falha.
       </p>
 
       <div className="space-y-2">

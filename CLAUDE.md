@@ -62,11 +62,11 @@ Three functions run on `pg_cron` (jobs live in `cron.job`):
 | Function | Schedule | What it does |
 | --- | --- | --- |
 | `check-task-reminders` | `*/15 7-23 * * *`, gated | 30/15-minute and deadline push notifications |
-| `mark-missed-tasks` | `10 0,1,9,15 * * *` | records undone scheduled tasks as `not_done` |
+| `mark-missed-tasks` | `10 0,1,9,15 * * *` | waives past-day requests for help nobody took (`auto_cancelled`), then records undone scheduled tasks as `not_done` |
 | `daily-approval-summary` | `0 21,22 * * *` | nudges parents about tasks still awaiting approval |
 | `purge-cron-history` | `20 3 * * *` | trims `cron.job_run_details` to 7 days |
 | `drop-idle-realtime-slot` | `40 * * * *` | drops Realtime's wal2json slot if inactive and holding > 64 MB of WAL |
-| `close-unanswered-delegations` | `*/10 * * * *`, gated | closes delegation requests nobody accepted within 3 hours and asks the parents |
+| `close-unanswered-delegations` | `*/10 * * * *`, gated | tells the parents about delegation requests nobody accepted after 3 hours (from 22:00, any still open); the request stays open |
 | `purge-paid` | `30 3 * * *` (+ after every payment) | deletes what a payment settled: paid rows, their photos, day-only data |
 
 `check-task-reminders` ticks every 15 minutes, 07:00-23:59 UTC (deadlines from
@@ -80,19 +80,22 @@ A task due outside 08:30-23:30 gets no push reminder (the in-app one still fires
 while the app is open).
 
 Delegations have a lifecycle (`task_delegations.status`, documented next to
-`DELEGATION_STATUS` in [src/lib/taskHelpers.js](src/lib/taskHelpers.js)). Each
-sibling can accept or refuse within `DELEGATION_ACCEPT_WINDOW_MINUTES` (180 — three hours):
-`pending` → `accepted` when one accepts; → `unanswered` the moment the last
-sibling refuses (the `refuse_delegation` SQL function does the append and the
-close in one statement, and the app then notifies the parents); or →
-`unanswered` when the window runs out with someone still silent
-(`close-unanswered-delegations`). Parents resolve it on Relatório → Aprovações
-as `parent_cancelled` (tombstone, no failure) or `parent_rejected` (the task is
-the delegator's again). The window is enforced client-side
-(`isDelegationOpenFor`) and in `TaskDelegationService.accept`; the edge
-function's constant and the people listed inside `refuse_delegation` must stay
-in step with `src/lib/taskHelpers.js`, and so must the `interval '3 hours'` in the
-`close-unanswered-delegations` cron gate.
+`DELEGATION_STATUS` in [src/lib/taskHelpers.js](src/lib/taskHelpers.js)). A
+request stays `pending` — acceptable by any sibling, one who refused included —
+all day, until someone accepts (`accepted`), the parents decide
+(`parent_cancelled`: tombstone, no failure; `parent_rejected`: the task is the
+delegator's again) or the day ends. The 3 hours
+(`DELEGATION_PARENTS_NOTICE_MINUTES`) only decide when the parents are told:
+`parents_notified_at` is set by `close-unanswered-delegations` after 3 hours
+with no "yes" (or from 22:00 for any request still open), or by the
+`refuse_delegation` SQL function when the last sibling refuses (the app then
+pushes). A request still open when its day ends is closed overnight by
+`mark-missed-tasks` as `auto_cancelled` with a tombstone — the child who asked
+in time is not penalised — or `expired` if they did it themselves.
+`unanswered` is legacy (it used to close the request to the siblings). The
+edge function's constant, the people listed inside `refuse_delegation`, and the
+`interval '3 hours'` / 22:00 in the cron gate (migration 028) must stay in step
+with `src/lib/taskHelpers.js`.
 
 More time. A child can ask the parents for more time on one of today's tasks,
 before or after its deadline (+30 min, +1 h, +2 h or the rest of the day, with

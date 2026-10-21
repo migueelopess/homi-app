@@ -7,7 +7,7 @@ import {
   tasksQuery, scheduledTasksQuery, occasionalTasksQuery,
   delegationsQuery, cancellationsQuery,
 } from '@/lib/queries';
-import { PERSON_AVATARS, getLocalDateStr, isDelegationOpenFor } from '@/lib/taskHelpers';
+import { PERSON_AVATARS, getLocalDateStr, isDelegationOfferedTo, hasRefused } from '@/lib/taskHelpers';
 import { useQuery } from '@tanstack/react-query';
 import NotificationBell from '@/components/notifications/NotificationBell';
 import HomiMark from '@/components/layout/HomiMark';
@@ -39,8 +39,9 @@ export default function AppLayout() {
     [tasks, today, person],
   );
 
+  // Requests I can still answer — not the ones I already refused.
   const pendingIncomingCount = delegations.filter(
-    d => isDelegationOpenFor(d, person) && d.task_date >= today
+    d => isDelegationOfferedTo(d, person, { tasks, cancellations }) && !hasRefused(d, person)
   ).length;
 
   const navItems = [

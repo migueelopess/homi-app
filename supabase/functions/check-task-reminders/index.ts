@@ -135,17 +135,9 @@ Deno.serve(async (req) => {
 
     console.log(`Checking reminders: ${todayStr} ${currentHour}:${currentMinute} (${todayKey})`);
 
-    // 0. Expire pending delegations from past days
-    const { data: expiredDelegations } = await supabase
-      .from("task_delegations")
-      .update({ status: "expired" })
-      .eq("status", "pending")
-      .lt("task_date", todayStr)
-      .select("id");
-
-    if (expiredDelegations && expiredDelegations.length > 0) {
-      console.log(`Expired ${expiredDelegations.length} pending delegations from past days`);
-    }
+    // (Requests still pending from past days are closed by mark-missed-tasks,
+    // which waives them — this used to mark them 'expired', which would now
+    // turn a waived request back into a failure.)
 
     // 0b. Fetch today's accepted delegations to redirect reminders
     const { data: todayDelegations } = await supabase

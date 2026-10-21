@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { settlesSlot, occurrenceOf, DELEGATION_ACCEPT_WINDOW_MINUTES } from '@/lib/taskHelpers';
+import { settlesSlot, occurrenceOf, getLocalDateStr } from '@/lib/taskHelpers';
 
 // Helper to parse Base44-style sort field: '-created_date' → { column: 'created_date', ascending: false }
 function parseSort(sortField) {
@@ -356,15 +356,16 @@ export const TaskDelegationService = {
   },
 
   async accept(id, toPerson) {
-    // Only while still pending (another sibling may have been quicker) and
-    // inside the acceptance window. No row matched → PGRST116 from .single().
-    const opensAfter = new Date(Date.now() - DELEGATION_ACCEPT_WINDOW_MINUTES * 60 * 1000).toISOString();
+    // Only while still pending — another sibling may have been quicker, or the
+    // parents may have decided — and on its own day. There is no time limit
+    // within the day: the 3 hours only decide when the parents are told.
+    // No row matched → PGRST116 from .single().
     const { data, error } = await supabase
       .from('task_delegations')
       .update({ to_person: toPerson, status: 'accepted', accepted_at: new Date().toISOString() })
       .eq('id', id)
       .eq('status', 'pending')
-      .gt('created_at', opensAfter)
+      .gte('task_date', getLocalDateStr())
       .select()
       .single();
     if (error) throw error;
@@ -372,10 +373,10 @@ export const TaskDelegationService = {
   },
 
   // A sibling says no. Done in one statement on the server (refuse_delegation,
-  // migration 026) so two siblings refusing at the same moment cannot lose
-  // each other's answer; when every sibling has refused, the same call closes
-  // the request as 'unanswered'. Returns the updated row, or null if the
-  // request was no longer pending.
+  // migrations 026/028) so two siblings refusing at the same moment cannot
+  // lose each other's answer; when every sibling has refused, the same call
+  // marks the parents as told (parents_notified_at) — the request stays open.
+  // Returns the updated row, or null if the request was no longer pending.
   async refuse(id, person) {
     const { data, error } = await supabase.rpc('refuse_delegation', { p_id: id, p_person: person });
     if (error) throw error;
@@ -383,14 +384,15 @@ export const TaskDelegationService = {
   },
 
   // The parents' answer to a request nobody accepted: 'parent_cancelled' or
-  // 'parent_rejected'. Guarded on 'unanswered' so two parents deciding at once
-  // cannot both act; returns null when it was already decided.
+  // 'parent_rejected'. Guarded on the request still being open, so two parents
+  // deciding at once — or a sibling accepting in the same moment — cannot both
+  // win; returns null when it was already settled.
   async decide(id, status, deciderId) {
     const { data, error } = await supabase
       .from('task_delegations')
       .update({ status, decided_at: new Date().toISOString(), decided_by: deciderId ?? null })
       .eq('id', id)
-      .eq('status', 'unanswered')
+      .in('status', ['pending', 'unanswered'])
       .select()
       .maybeSingle();
     if (error) throw error;

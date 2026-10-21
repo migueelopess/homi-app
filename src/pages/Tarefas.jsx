@@ -403,8 +403,9 @@ export default function Tarefas() {
                           ? `← ${task._delegation.from_person}`
                           : {
                               accepted: `→ ${task._delegation.to_person}`,
-                              pending: 'Pedido aberto',
+                              pending: task._delegation.parents_notified_at ? 'Ninguém aceitou' : 'Pedido aberto',
                               unanswered: 'Ninguém aceitou',
+                              auto_cancelled: 'Cancelada',
                               parent_cancelled: 'Cancelada',
                               parent_rejected: 'Tem de fazer',
                             }[task._delegation.status] || 'Expirado'}

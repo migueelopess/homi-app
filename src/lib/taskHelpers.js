@@ -60,26 +60,27 @@ export const DELEGATION_BONUS_TASK_NAME = 'Campeão das Delegações';
 
 // Lifecycle of a delegation (task_delegations.status):
 //
-//   pending ──a sibling accepts─────────────────▶ accepted
+//   pending ──a sibling accepts (any time that day)──▶ accepted
 //      │
-//      ├─every sibling refuses──────────────────▶ unanswered  (parents notified at once)
-//      └─the window runs out with no "yes"──────▶ unanswered  (parents notified)
-//                                                    ├─▶ parent_cancelled  task waived, no failure
-//                                                    └─▶ parent_rejected   "you could do it": the task
-//                                                                          is the delegator's again
-//   expired — legacy, and the overnight safety net for anything still pending.
+//      │  after 3 hours with no "yes", once every sibling has refused, or from
+//      │  22:00: the parents are told (parents_notified_at) — still pending, so a
+//      │  sibling can still accept, a refusal included, until:
+//      ├─the parents cancel it──────────────▶ parent_cancelled  task waived, no failure
+//      ├─the parents say "you could do it"──▶ parent_rejected   the task is the delegator's again
+//      └─the day ends with nobody on it─────▶ auto_cancelled    waived overnight, no failure
+//                                                               (expired if the child did it after all)
+//   unanswered — legacy (October 2026): what "parents told" used to be, when it
+//   also closed the request to the siblings.
 //
-// A request no one can answer used to sit "pending" all day, and when nobody
-// took it the child who asked for help got the failure anyway. Now siblings
-// accept or refuse; once they have all refused the parents are asked straight
-// away. A sibling who simply ignores it is treated as a "no" when the window
-// closes, so a request can never hang on someone who did not open the app.
-// The window was one hour at first and became three (October 2026) to give
-// siblings time to see the request and decide.
-export const DELEGATION_ACCEPT_WINDOW_MINUTES = 180;
-// "3 horas" — for every piece of copy that mentions the window.
-export const DELEGATION_ACCEPT_WINDOW_LABEL = (() => {
-  const hours = DELEGATION_ACCEPT_WINDOW_MINUTES / 60;
+// The three hours used to close the request too, and a sibling who decided to
+// help later found nothing left to accept. Now they only decide when the
+// parents hear about it. A child who asked for help in time is never
+// penalised for nobody taking it: unless the parents say it was theirs to do,
+// an open request ends the day waived.
+export const DELEGATION_PARENTS_NOTICE_MINUTES = 180;
+// "3 horas" — for every piece of copy that mentions it.
+export const DELEGATION_PARENTS_NOTICE_LABEL = (() => {
+  const hours = DELEGATION_PARENTS_NOTICE_MINUTES / 60;
   return hours === 1 ? '1 hora' : `${hours} horas`;
 })();
 export const DELEGATION_STATUS = {
@@ -88,20 +89,28 @@ export const DELEGATION_STATUS = {
   UNANSWERED: 'unanswered',
   PARENT_CANCELLED: 'parent_cancelled',
   PARENT_REJECTED: 'parent_rejected',
+  AUTO_CANCELLED: 'auto_cancelled',
   EXPIRED: 'expired',
 };
 
-export function delegationAcceptDeadline(delegation) {
-  return new Date(new Date(delegation.created_at).getTime() + DELEGATION_ACCEPT_WINDOW_MINUTES * 60 * 1000);
+// When the parents are told about a request nobody has accepted.
+export function parentsNoticeAt(delegation) {
+  return new Date(new Date(delegation.created_at).getTime() + DELEGATION_PARENTS_NOTICE_MINUTES * 60 * 1000);
 }
 
-// Can a sibling still accept this request? Only while pending and inside the
-// window. The server flips it to `unanswered` within a few minutes of the
-// window ending; until then this keeps the "Aceitar" button from outliving it.
+export function minutesUntilParentsNotice(delegation, now = new Date()) {
+  return Math.max(0, Math.ceil((parentsNoticeAt(delegation) - now) / 60000));
+}
+
+// Have the parents been told nobody took it? (A legacy 'unanswered' row is.)
+export function parentsNotified(delegation) {
+  return !!delegation?.parents_notified_at || delegation?.status === DELEGATION_STATUS.UNANSWERED;
+}
+
+// Can a sibling still accept it? While pending, on its own day.
 export function isDelegationOpen(delegation, now = new Date()) {
   return delegation?.status === DELEGATION_STATUS.PENDING
-    && !!delegation.created_at
-    && delegationAcceptDeadline(delegation) > now;
+    && delegation.task_date >= getLocalDateStr(now);
 }
 
 // Siblings who said no to this request (task_delegations.refused_by).
@@ -109,29 +118,27 @@ export function refusedBy(delegation) {
   return Array.isArray(delegation?.refused_by) ? delegation.refused_by : [];
 }
 
+export function hasRefused(delegation, person) {
+  return refusedBy(delegation).includes(person);
+}
+
 // Everyone who could take this request: every child but the one asking.
 export function siblingsOf(person) {
   return PEOPLE.filter(p => p !== person);
 }
 
-// Can *this* child still answer it? Open, not their own, and not one they
-// already refused.
+// Can *this* child accept it? Open and not their own. Having refused it does
+// not stop them — they may have changed their mind; screens show those apart.
 export function isDelegationOpenFor(delegation, person, now = new Date()) {
-  return isDelegationOpen(delegation, now)
-    && delegation.from_person !== person
-    && !refusedBy(delegation).includes(person);
+  return isDelegationOpen(delegation, now) && delegation.from_person !== person;
 }
 
-// How the siblings answered a request that closed without a "yes": who said no
-// and who never answered. Parents see this when deciding.
+// How the siblings have answered a request nobody accepted: who said no and
+// who never answered. Parents see this when deciding.
 export function siblingAnswers(delegation) {
   const refused = refusedBy(delegation);
   const silent = siblingsOf(delegation.from_person).filter(p => !refused.includes(p));
   return { refused, silent };
-}
-
-export function minutesLeftToAccept(delegation, now = new Date()) {
-  return Math.max(0, Math.ceil((delegationAcceptDeadline(delegation) - now) / 60000));
 }
 
 // The delegator's own occurrence behind a request.
@@ -142,28 +149,48 @@ export function delegatedOccurrence(delegation) {
   return { key, task_name: delegation.task_name, end_time: delegation.end_time ?? null };
 }
 
-// A request nobody accepted that is still waiting for the parents. If the
-// child ended up doing the task themselves there is nothing left to decide.
-//
-// Only on the request's own day. Once the day is over an unanswered request is
-// left as it stands — the task was the child's, and the overnight check has
-// recorded the failure — and showing it to the parents days later was just
-// clutter. (A parent can still cancel that day's task in Tarefas.) A task the
-// parents already cancelled from Tarefas is decided too.
-export function delegationNeedsParents(delegation, tasks = [], { today = getLocalDateStr(), cancellations = [] } = {}) {
-  if (delegation?.status !== DELEGATION_STATUS.UNANSWERED) return false;
-  if (delegation.task_date !== today) return false;
+// The child who asked for help did the task themselves after all.
+export function delegatorDidIt(delegation, tasks = []) {
   const occurrence = delegatedOccurrence(delegation);
-  const cancelled = cancellations.some(c =>
-    c.person === delegation.from_person && c.task_date === delegation.task_date && settlesSlot(c, occurrence));
-  if (cancelled) return false;
-  return !tasks.some(t =>
+  return tasks.some(t =>
     t.person === delegation.from_person &&
     t.date === delegation.task_date &&
     t.completion_type !== 'not_done' &&
     t.completion_type !== 'cancelled' &&
     settlesSlot(t, occurrence)
   );
+}
+
+// The parents cancelled the delegator's task (in Tarefas) while the request
+// was open.
+export function delegationTaskCancelled(delegation, cancellations = []) {
+  const occurrence = delegatedOccurrence(delegation);
+  return cancellations.some(c =>
+    c.person === delegation.from_person && c.task_date === delegation.task_date && settlesSlot(c, occurrence));
+}
+
+// A request worth showing a sibling: open, not theirs, not already done by the
+// child who asked, and not a task the parents have since cancelled.
+export function isDelegationOfferedTo(delegation, person, { tasks = [], cancellations = [], now = new Date() } = {}) {
+  return isDelegationOpenFor(delegation, person, now)
+    && !delegatorDidIt(delegation, tasks)
+    && !delegationTaskCancelled(delegation, cancellations);
+}
+
+// A request nobody accepted, the parents have been told, and they have not
+// decided — so it sits on Relatório → Aprovações. Siblings can still accept it
+// meanwhile, which takes it off.
+//
+// Only on the request's own day: an undecided one is waived overnight anyway,
+// and showing it days later was clutter. Nothing to decide either if the
+// child did it after all, or the parents already cancelled the task in Tarefas.
+export function delegationNeedsParents(delegation, tasks = [], { today = getLocalDateStr(), cancellations = [] } = {}) {
+  const waiting = delegation?.status === DELEGATION_STATUS.UNANSWERED
+    || (delegation?.status === DELEGATION_STATUS.PENDING && !!delegation.parents_notified_at);
+  if (!waiting) return false;
+  if (delegation.task_date !== today) return false;
+  if (delegationTaskCancelled(delegation, cancellations)) return false;
+  return !delegatorDidIt(delegation, tasks);
 }
 
 // Breaking a task you accepted from a sibling costs double: you cleared

@@ -17,8 +17,9 @@ import {
   isBonusTask, isWeeklyBonus, isBonusBlock, BONUS_TASK_NAME, DELEGATION_BONUS_TASK_NAME,
   isChore, isAdjustment, formatMoney, checkWeeklyBonus, calculateEarnings, FINE_AMOUNT, FINE_TASK_NAME,
   DELEGATION_CHAMPION_BONUS, completionTypeFor,
-  isDelegationOpen, minutesLeftToAccept, delegationNeedsParents, DELEGATION_STATUS,
-  isDelegationOpenFor, siblingAnswers, siblingsOf, DELEGATION_ACCEPT_WINDOW_LABEL, isTaskPaid,
+  isDelegationOpen, minutesUntilParentsNotice, delegationNeedsParents, DELEGATION_STATUS,
+  isDelegationOpenFor, siblingAnswers, siblingsOf, DELEGATION_PARENTS_NOTICE_LABEL, isTaskPaid,
+  parentsNotified, hasRefused, isDelegationOfferedTo,
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
   effectiveDeadline, requestedUntil, extensionFor, extensionRequestFor, pendingExtensionRequests,
   extensionRequestOrdinal, correctedForExtension, completionValue, untilLabel,
@@ -270,51 +271,67 @@ t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_
   t('own Sidney chore stays €0', completionValue({ taskName: 'Passear Sidney', completionType: 'on_time_no_reminder' }), 0);
 }
 
-// ===== Delegation requests: one hour to accept, then the parents decide =====
+// ===== Delegation requests: open all day; after 3 hours the parents are told =====
 {
   const created = new Date(2026, 9, 12, 18, 0);
   const req = { id: 'r1', status: 'pending', created_at: created.toISOString(), from_person: 'Miguel',
                 task_type: 'scheduled', scheduled_task_id: 9, task_name: 'Maquina', task_date: '2026-10-12', end_time: '19:00' };
   const at = (h, m) => new Date(2026, 9, 12, h, m);
 
-  t('a request can be accepted inside the 3-hour window', isDelegationOpen(req, at(20, 59)));
-  t('a request cannot be accepted once the 3 hours are up', isDelegationOpen(req, at(21, 0)), false);
+  t('a request can be accepted inside the first 3 hours', isDelegationOpen(req, at(20, 59)));
+  t('…and still after them — the 3 hours only tell the parents', isDelegationOpen(req, at(23, 50)));
+  t('…but not the next day', isDelegationOpen(req, new Date(2026, 9, 13, 0, 5)), false);
   t('an accepted request is no longer open', isDelegationOpen({ ...req, status: 'accepted' }, at(18, 10)), false);
-  t('minutes left are rounded up', minutesLeftToAccept(req, at(18, 20)), 160);
-  t('minutes left never go negative', minutesLeftToAccept(req, at(22, 0)), 0);
+  t('a request the parents decided is no longer open', isDelegationOpen({ ...req, status: 'parent_cancelled' }, at(18, 10)), false);
+  t('minutes until the parents are told are rounded up', minutesUntilParentsNotice(req, at(18, 20)), 160);
+  t('…and never go negative', minutesUntilParentsNotice(req, at(22, 0)), 0);
 
   const day = '2026-10-12';
-  const unanswered = { ...req, status: DELEGATION_STATUS.UNANSWERED };
-  t('an unanswered request waits for the parents', delegationNeedsParents(unanswered, [], { today: day }));
-  t('a pending request does not (yet)', delegationNeedsParents(req, [], { today: day }), false);
-  t('a decided request does not', delegationNeedsParents({ ...req, status: 'parent_cancelled' }, [], { today: day }), false);
+  const told = { ...req, parents_notified_at: at(21, 0).toISOString() };
+  t('parents not told yet', parentsNotified(req), false);
+  t('parents told', parentsNotified(told));
+  t('an old unanswered row counts as told', parentsNotified({ ...req, status: DELEGATION_STATUS.UNANSWERED }));
+  t('a told request waits for the parents', delegationNeedsParents(told, [], { today: day }));
+  t('…and stays open to the siblings meanwhile', isDelegationOpen(told, at(21, 30)));
+  t('an old unanswered request still waits for the parents',
+    delegationNeedsParents({ ...req, status: DELEGATION_STATUS.UNANSWERED }, [], { today: day }));
+  t('a pending request not told yet does not', delegationNeedsParents(req, [], { today: day }), false);
+  t('a decided request does not', delegationNeedsParents({ ...told, status: 'parent_cancelled' }, [], { today: day }), false);
+  t('a sibling accepting late takes it off the parents', delegationNeedsParents({ ...told, status: 'accepted' }, [], { today: day }), false);
+  t('waived overnight, it is gone', delegationNeedsParents({ ...told, status: 'auto_cancelled' }, [], { today: day }), false);
   const doneItself = { person: 'Miguel', date: '2026-10-12', task_name: 'Maquina', end_time: '19:00',
                        completion_type: 'on_time_no_reminder', scheduled_task_id: 9 };
-  t('if the child did it after all, the parents are not asked', delegationNeedsParents(unanswered, [doneItself], { today: day }), false);
+  t('if the child did it after all, the parents are not asked', delegationNeedsParents(told, [doneItself], { today: day }), false);
   t('a sibling doing their own same-named task does not count',
-    delegationNeedsParents(unanswered, [{ ...doneItself, person: 'Pedro', scheduled_task_id: 33 }], { today: day }));
-  t('a failure is not "done"', delegationNeedsParents(unanswered, [{ ...doneItself, completion_type: 'not_done' }], { today: day }));
-  t("the next day it no longer waits — it was the child's, and is gone from the list",
-    delegationNeedsParents(unanswered, [], { today: '2026-10-13' }), false);
+    delegationNeedsParents(told, [{ ...doneItself, person: 'Pedro', scheduled_task_id: 33 }], { today: day }));
+  t('a failure is not "done"', delegationNeedsParents(told, [{ ...doneItself, completion_type: 'not_done' }], { today: day }));
+  t('the next day it no longer waits', delegationNeedsParents(told, [], { today: '2026-10-13' }), false);
   const tombstone = { person: 'Miguel', task_date: '2026-10-12', task_name: 'Maquina', end_time: '19:00', scheduled_task_id: 9 };
   t('a task the parents already cancelled in Tarefas is no longer asked about',
-    delegationNeedsParents(unanswered, [], { today: day, cancellations: [tombstone] }), false);
+    delegationNeedsParents(told, [], { today: day, cancellations: [tombstone] }), false);
   t("a sibling's cancellation does not count",
-    delegationNeedsParents(unanswered, [], { today: day, cancellations: [{ ...tombstone, person: 'Pedro', scheduled_task_id: 33 }] }));
+    delegationNeedsParents(told, [], { today: day, cancellations: [{ ...tombstone, person: 'Pedro', scheduled_task_id: 33 }] }));
+
+  // What a sibling is offered
+  t('offered to a sibling', isDelegationOfferedTo(told, 'Pedro', { now: at(21, 30) }));
+  t('not once the child did it themselves', isDelegationOfferedTo(told, 'Pedro', { tasks: [doneItself], now: at(21, 30) }), false);
+  t('not once the parents cancelled the task', isDelegationOfferedTo(told, 'Pedro', { cancellations: [tombstone], now: at(21, 30) }), false);
+  t('never to the child who asked', isDelegationOfferedTo(told, 'Miguel', { now: at(21, 30) }), false);
 }
 
 // ===== Siblings accept or refuse =====
-t('the window is described as 3 horas', DELEGATION_ACCEPT_WINDOW_LABEL, '3 horas');
+t('the parents are told after 3 horas', DELEGATION_PARENTS_NOTICE_LABEL, '3 horas');
 {
   const created = new Date(2026, 9, 12, 18, 0);
   const at = new Date(2026, 9, 12, 18, 20);
-  const req = { status: 'pending', created_at: created.toISOString(), from_person: 'Pedro', refused_by: ['Miguel'] };
+  const req = { status: 'pending', created_at: created.toISOString(), from_person: 'Pedro', refused_by: ['Miguel'], task_date: '2026-10-12' };
   t('the siblings of Pedro are Ines and Miguel', siblingsOf('Pedro').join(','), 'Inês,Miguel');
-  t('a sibling who refused no longer sees the request', isDelegationOpenFor(req, 'Miguel', at), false);
-  t('the other sibling still can answer', isDelegationOpenFor(req, 'Inês', at));
+  t('a sibling who refused can still change their mind', isDelegationOpenFor(req, 'Miguel', at));
+  t('…and is known to have refused', hasRefused(req, 'Miguel'));
+  t('the other sibling has not', hasRefused(req, 'Inês'), false);
+  t('the other sibling can answer', isDelegationOpenFor(req, 'Inês', at));
   t('nobody answers their own request', isDelegationOpenFor(req, 'Pedro', at), false);
-  t('a request with no refusals yet is open to both', isDelegationOpenFor({ ...req, refused_by: [] }, 'Miguel', at));
-  t('older rows without refused_by still work', isDelegationOpenFor({ ...req, refused_by: undefined }, 'Miguel', at));
+  t('older rows without refused_by still work', hasRefused({ ...req, refused_by: undefined }, 'Miguel'), false);
   const partial = siblingAnswers(req);
   t('answers: who refused', partial.refused.join(','), 'Miguel');
   t('answers: who stayed silent', partial.silent.join(','), 'Inês');

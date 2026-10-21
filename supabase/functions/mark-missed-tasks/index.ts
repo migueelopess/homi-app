@@ -219,6 +219,82 @@ function countFailures(tasks: TaskRow[], person: string, cancellations: Cancella
   return total;
 }
 
+// ── Requests for help still open when their day ended ──────────────────────
+// A child asked a sibling to take a task, nobody did, and the parents did not
+// decide. The child did what was asked of them — asked for help in time — so
+// it ends without a failure: a tombstone, exactly what a parent cancelling it
+// would write, and status `auto_cancelled`. If the child did it after all there
+// is nothing to waive and the request simply expires. Runs before the failure
+// pass so that pass sees the tombstones.
+type OpenRequest = {
+  id: string;
+  from_person: string;
+  task_type: string;
+  scheduled_task_id: number | null;
+  occasional_task_id: number | null;
+  task_name: string;
+  task_date: string;
+  end_time: string | null;
+};
+
+async function closeOpenRequests(todayStr: string, dryRun: boolean) {
+  const { data: open, error } = await supabase
+    .from("task_delegations")
+    .select("id, from_person, task_type, scheduled_task_id, occasional_task_id, task_name, task_date, end_time")
+    .eq("status", "pending")
+    .lt("task_date", todayStr);
+  if (error) throw error;
+  const waived: Cancellation[] = [];
+  const expired: string[] = [];
+  if (!open?.length) return { waived, expired, auto_cancelled: [] as string[] };
+
+  const dates = [...new Set(open.map((d) => d.task_date))];
+  const { data: rows, error: rowsErr } = await supabase
+    .from("tasks")
+    .select("person, task_name, date, end_time, completion_type, scheduled_task_id, occasional_task_id, delegation_id")
+    .in("date", dates);
+  if (rowsErr) throw rowsErr;
+
+  const autoCancelled: string[] = [];
+  for (const d of open as OpenRequest[]) {
+    const occurrence: Occurrence = {
+      key: d.task_type === "occasional" ? `o:${d.occasional_task_id}` : `s:${d.scheduled_task_id}`,
+      task_name: d.task_name,
+      end_time: d.end_time ?? null,
+    };
+    const doneAnyway = (rows ?? []).some((t) =>
+      t.person === d.from_person && t.date === d.task_date && t.completion_type !== "not_done" && settlesSlot(t, occurrence));
+
+    if (doneAnyway) {
+      expired.push(d.id);
+      if (!dryRun) {
+        await supabase.from("task_delegations").update({ status: "expired" }).eq("id", d.id).eq("status", "pending");
+      }
+      continue;
+    }
+
+    const tombstone: Cancellation = {
+      person: d.from_person,
+      task_name: d.task_name,
+      task_date: d.task_date,
+      end_time: d.end_time ?? null,
+      scheduled_task_id: d.task_type === "scheduled" ? d.scheduled_task_id : null,
+      occasional_task_id: d.task_type === "occasional" ? d.occasional_task_id : null,
+    };
+    waived.push(tombstone);
+    autoCancelled.push(d.id);
+    if (dryRun) continue;
+
+    const { error: tombErr } = await supabase.from("task_cancellations").insert({ ...tombstone, cancelled_by: null });
+    // 23505: already cancelled — the waiver is there either way.
+    if (tombErr && tombErr.code !== "23505") throw tombErr;
+    await supabase.from("task_delegations")
+      .update({ status: "auto_cancelled", closed_at: new Date().toISOString() })
+      .eq("id", d.id).eq("status", "pending");
+  }
+  return { waived, expired, auto_cancelled: autoCancelled };
+}
+
 async function notifyParents(title: string, body: string, tag: string) {
   try {
     await fetch(`${SUPABASE_URL}/functions/v1/send-push-notification`, {
@@ -255,6 +331,11 @@ Deno.serve(async (req) => {
     const todayStr = lisbonToday();
     const yesterdayStr = addDays(todayStr, -1);
 
+    // Close yesterday's (or older) requests nobody took — before anything
+    // decides failures, and on every run: it costs a single query when there
+    // are none.
+    const requests = await closeOpenRequests(todayStr, dryRun);
+
     // Cheap first pass: when every child is already checked through yesterday
     // there is nothing to do, and this runs often enough that the common case
     // should cost one query.
@@ -269,7 +350,7 @@ Deno.serve(async (req) => {
     const pending = PEOPLE.filter((p) => (checkpoints.get(p) ?? "") < yesterdayStr);
     if (pending.length === 0) {
       return new Response(
-        JSON.stringify({ checked_through: yesterdayStr, up_to_date: true, created: 0, dry_run: dryRun }),
+        JSON.stringify({ checked_through: yesterdayStr, up_to_date: true, created: 0, requests, dry_run: dryRun }),
         { headers: { "Content-Type": "application/json", ...corsHeaders } },
       );
     }
@@ -308,6 +389,8 @@ Deno.serve(async (req) => {
     const scheduled = (scheduledRes.data ?? []) as ScheduledTask[];
     const delegations = (delegationsRes.data ?? []) as Delegation[];
     const cancellations = (cancellationsRes.data ?? []) as Cancellation[];
+    // In a dry run the tombstones above were not written; count them anyway.
+    if (dryRun) cancellations.push(...requests.waived);
     const lastCleanup: string | null = cleanupRes.data?.cleaned_at ?? null;
 
     if (scheduled.length === 0) {
@@ -496,13 +579,15 @@ Deno.serve(async (req) => {
       totalCreated += createdRows;
     }
 
-    console.log("[mark-missed-tasks]", JSON.stringify({ todayStr, yesterdayStr, summary }));
+    console.log("[mark-missed-tasks]", JSON.stringify({ todayStr, yesterdayStr, summary,
+      auto_cancelled: requests.auto_cancelled, expired: requests.expired }));
 
     return new Response(
       JSON.stringify({
         checked_through: yesterdayStr,
         created: totalCreated,
         by_person: summary,
+        requests: { auto_cancelled: requests.auto_cancelled, expired: requests.expired },
         ...(dryRun ? { dry_run: true, would_create: wouldCreate } : {}),
       }),
       { headers: { "Content-Type": "application/json", ...corsHeaders } },

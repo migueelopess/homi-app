@@ -47,23 +47,35 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { data: pending, error } = await supabase
-      .from("tasks")
-      .select("id, person")
-      .eq("approval_status", "pending");
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
 
-    if (error) throw error;
+    // Besides photos to approve: today's requests for help nobody has taken
+    // (still open — undecided, they are waived overnight) and requests for
+    // more time not yet answered (they lapse with the day).
+    const [tasksRes, helpRes, timeRes] = await Promise.all([
+      supabase.from("tasks").select("id, person").eq("approval_status", "pending"),
+      supabase.from("task_delegations").select("id").eq("status", "pending").eq("task_date", today),
+      supabase.from("extension_requests").select("id").eq("status", "pending").eq("task_date", today),
+    ]);
+    if (tasksRes.error) throw tasksRes.error;
+    if (helpRes.error) throw helpRes.error;
+    if (timeRes.error) throw timeRes.error;
 
-    const total = pending?.length ?? 0;
-    if (total === 0) {
+    const pending = tasksRes.data ?? [];
+    const total = pending.length;
+    const help = helpRes.data?.length ?? 0;
+    const time = timeRes.data?.length ?? 0;
+    if (total === 0 && help === 0 && time === 0) {
       return new Response(
-        JSON.stringify({ sent: false, reason: "no pending tasks" }),
+        JSON.stringify({ sent: false, reason: "nothing pending" }),
         { headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
 
     const counts: Record<string, number> = {};
-    for (const t of pending!) {
+    for (const t of pending) {
       counts[t.person] = (counts[t.person] ?? 0) + 1;
     }
 
@@ -71,7 +83,11 @@ Deno.serve(async (req) => {
       .map(([person, n]) => `${n} ${person}`)
       .join(", ");
 
-    const body = `${total} ${total === 1 ? "tarefa pendente" : "tarefas pendentes"} (${breakdown}). Toca para rever.`;
+    const parts: string[] = [];
+    if (total > 0) parts.push(`${total} ${total === 1 ? "tarefa pendente" : "tarefas pendentes"} (${breakdown})`);
+    if (help > 0) parts.push(`${help} ${help === 1 ? "pedido de ajuda sem ninguém" : "pedidos de ajuda sem ninguém"}`);
+    if (time > 0) parts.push(`${time} ${time === 1 ? "pedido de mais tempo" : "pedidos de mais tempo"}`);
+    const body = `${parts.join(" · ")}. Toca para rever.`;
 
     const { error: pushError } = await supabase.functions.invoke(
       "send-push-notification",
@@ -91,7 +107,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ sent: true, total, counts }),
+      JSON.stringify({ sent: true, total, counts, help, time }),
       { headers: { "Content-Type": "application/json", ...corsHeaders } }
     );
   } catch (err) {

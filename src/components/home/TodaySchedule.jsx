@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
 import {
-  TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, DELEGATION_ACCEPT_WINDOW_LABEL,
+  TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, DELEGATION_PARENTS_NOTICE_LABEL, DELEGATION_STATUS, parentsNotified,
   scheduledOccurrence, occasionalOccurrence, delegationOccurrence, settlesSlot,
   EXTENSION_REQUEST_STATUS, EXTRA_TIME_OPTIONS, effectiveDeadline, requestedUntil, untilLabel,
   extensionFor, extensionRequestFor,
@@ -97,14 +97,17 @@ function isActive(startTime, endTime) {
 }
 
 // What became of a request I made for one of my own tasks, once it is back
-// on my list (only unanswered / decided requests get here — pending and
-// accepted ones keep the task off my list altogether).
+// on my list. A request still waiting on the 3 hours, or accepted, keeps the
+// task off my list altogether; once the parents have been told, it comes back
+// so I can still do it myself — while a sibling can still take it.
 function RequestOutcome({ request }) {
   if (!request) return null;
-  const text = {
-    unanswered: '🙋 Ninguém aceitou a tempo — os pais vão decidir',
-    parent_rejected: '👀 Os pais acham que consegues — é tua para fazer',
-  }[request.status];
+  const waiting = request.status === DELEGATION_STATUS.PENDING || request.status === DELEGATION_STATUS.UNANSWERED;
+  const text = waiting
+    ? '🙋 Ninguém aceitou ainda — os pais foram avisados (os irmãos ainda podem aceitar)'
+    : {
+      parent_rejected: '👀 Os pais acham que consegues — é tua para fazer',
+    }[request.status];
   if (!text) return null;
   return (
     <p className={`text-[11px] font-medium mt-0.5 ${
@@ -152,10 +155,12 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
   const todayDelegations = delegations.filter(d => d.task_date === today);
 
   // Tasks I delegated away and that are out of my hands for now — a sibling
-  // took them, or the request is still open — are hidden from my schedule.
-  // Once nobody accepts in time the task comes back to me, flagged.
+  // took them, or the request is fresh — are hidden from my schedule. Once
+  // the parents have been told nobody took it, the task comes back to me,
+  // flagged (a sibling can still accept it, which hides it again).
   const myDelegatedAway = todayDelegations.filter(
-    d => d.from_person === person && (d.status === 'pending' || d.status === 'accepted')
+    d => d.from_person === person &&
+      (d.status === DELEGATION_STATUS.ACCEPTED || (d.status === DELEGATION_STATUS.PENDING && !parentsNotified(d)))
   );
 
   // My own request for this occurrence, if I made one today. A task can only
@@ -223,7 +228,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
         sendPushNotification({
           person: sibling,
           title: '📥 Pedido de ajuda!',
-          body: `${person} precisa de ajuda com: ${taskName}. Aceita ou recusa — tens ${DELEGATION_ACCEPT_WINDOW_LABEL}.`,
+          body: `${person} precisa de ajuda com: ${taskName}. Aceita ou recusa — podes aceitar até ao fim do dia.`,
           url: '/delegar',
           tag: `delegation-request-${data.id}`,
         });
@@ -611,7 +616,7 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
               </div>
             </div>
             <p className="text-sm text-muted-foreground mb-5">
-              Os teus irmãos podem aceitar ou recusar durante {DELEGATION_ACCEPT_WINDOW_LABEL}. Quem aceitar fica com a tarefa e a recompensa. Se ninguém aceitar, os pais decidem se a cancelam.
+              Os teus irmãos podem aceitar até ao fim do dia — quem aceitar fica com a tarefa e a recompensa. Se ninguém aceitar em {DELEGATION_PARENTS_NOTICE_LABEL}, os pais são avisados e podem cancelá-la. Se o dia acabar sem ninguém aceitar e sem decisão dos pais, não conta como falha.
             </p>
             <button
               disabled={delegateMutation.isPending}

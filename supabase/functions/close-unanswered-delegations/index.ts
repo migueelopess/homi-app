@@ -1,23 +1,29 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Closes requests for help that no sibling accepted within the window (3 hours), and asks
-// the parents to decide.
+// Tells the parents about requests for help nobody has accepted after 3 hours.
 //
-// A child delegates a task they cannot do; siblings have three hours to accept or refuse it.
-// When nobody does, the request moves to `unanswered` and the parents are told
-// — they then either cancel the task (no failure) or decide it was the child's
-// to do after all (see src/components/parents/UnansweredDelegations.jsx).
+// A child delegates a task they cannot do; siblings can accept it any time
+// that day. After 3 hours with no "yes" — or from 22:00, for a request made
+// late — the parents are told (`parents_notified_at`) and can cancel the task
+// or decide it was the child's to do after all (see
+// src/components/parents/UnansweredDelegations.jsx). The request stays open
+// meanwhile: telling the parents no longer closes it to the siblings, which is
+// what it used to do. One left open at the end of the day is waived by
+// mark-missed-tasks. (The name is from when this closed requests.)
 //
 // Runs from pg_cron every 10 minutes, but the cron command only calls this when
-// a pending request is already past its window, so most ticks never get here.
-// Kept in step with DELEGATION_ACCEPT_WINDOW_MINUTES in src/lib/taskHelpers.js.
+// such a request exists, so most ticks never get here. Kept in step with
+// DELEGATION_PARENTS_NOTICE_MINUTES in src/lib/taskHelpers.js, and with the
+// cron gate (migration 028).
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const ACCEPT_WINDOW_MINUTES = 180;
-const ACCEPT_WINDOW_LABEL = ACCEPT_WINDOW_MINUTES === 60 ? "1 hora" : `${ACCEPT_WINDOW_MINUTES / 60} horas`;
+const NOTICE_MINUTES = 180;
+// From this hour every open request of the day is told to the parents, so one
+// made in the evening still reaches them before the day ends.
+const LATE_HOUR = 22;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -53,8 +59,8 @@ async function push(person: string, title: string, body: string, url: string, ta
   }
 }
 
-// Did the child end up doing it themselves within the window? Then nobody needs
-// to decide anything. Matched on the occurrence's identity, with the old
+// Did the child end up doing it themselves? Then nobody needs to decide
+// anything. Matched on the occurrence's identity, with the old
 // name + deadline fallback for rows written before identities existed.
 async function wasDoneAnyway(d: Delegation): Promise<boolean> {
   const { data, error } = await supabase
@@ -81,13 +87,22 @@ Deno.serve(async (req) => {
     let dryRun = false;
     try { dryRun = (await req.json())?.dry_run === true; } catch { /* cron call, no body */ }
 
-    const cutoff = new Date(Date.now() - ACCEPT_WINDOW_MINUTES * 60 * 1000).toISOString();
+    const cutoff = new Date(Date.now() - NOTICE_MINUTES * 60 * 1000).toISOString();
+    const lisbon = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Lisbon", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false,
+    }).formatToParts(new Date());
+    const part = (t: string) => lisbon.find((p) => p.type === t)?.value ?? "";
+    const today = `${part("year")}-${part("month")}-${part("day")}`;
+    const late = parseInt(part("hour"), 10) >= LATE_HOUR;
 
-    const { data: overdue, error } = await supabase
+    let query = supabase
       .from("task_delegations")
       .select("id, from_person, refused_by, task_type, scheduled_task_id, occasional_task_id, task_name, task_date, end_time")
       .eq("status", "pending")
-      .lt("created_at", cutoff);
+      .is("parents_notified_at", null)
+      .eq("task_date", today);
+    if (!late) query = query.lt("created_at", cutoff);
+    const { data: overdue, error } = await query;
     if (error) throw error;
 
     const unanswered: Delegation[] = [];
@@ -103,14 +118,15 @@ Deno.serve(async (req) => {
 
     const now = new Date().toISOString();
 
-    // Each update re-checks `pending`, so a sibling accepting in the very last
-    // second wins and the request is simply left alone.
+    // Each update re-checks `pending` and that nobody told the parents yet, so
+    // a sibling accepting in the very last second wins, and the last sibling's
+    // refusal (which tells the parents itself) is not announced twice.
     const closed: Delegation[] = [];
     for (const d of unanswered) {
       const { data: row } = await supabase
         .from("task_delegations")
-        .update({ status: "unanswered", closed_at: now })
-        .eq("id", d.id).eq("status", "pending")
+        .update({ parents_notified_at: now })
+        .eq("id", d.id).eq("status", "pending").is("parents_notified_at", null)
         .select("id").maybeSingle();
       if (row) closed.push(d);
     }
@@ -123,37 +139,36 @@ Deno.serve(async (req) => {
 
     for (const d of closed) {
       const when = d.end_time ? ` (até às ${d.end_time})` : "";
-      // Requests every sibling refused are closed the moment the last one
-      // says no (by the app, via refuse_delegation); the ones that reach this
-      // point had at least one sibling who never answered within the window.
+      // When every sibling refused, the app told the parents at the last
+      // refusal; the ones that reach this point had someone still silent.
       const refused = d.refused_by ?? [];
       const silent = PEOPLE.filter((p) => p !== d.from_person && !refused.includes(p));
       const answers = refused.length === 0
-        ? "Nenhum irmão respondeu"
+        ? "Nenhum irmão aceitou ainda"
         : silent.length === 0
           ? "Os irmãos recusaram"
-          : `${refused.join(" e ")} recusou e ${silent.join(" e ")} não respondeu`;
+          : `${refused.join(" e ")} recusou e ${silent.join(" e ")} ainda não respondeu`;
       await push(
         "__parents__",
         `🙋 ${d.from_person} precisa de uma decisão`,
-        `${d.from_person} não consegue fazer "${d.task_name}"${when}. ${answers} em ${ACCEPT_WINDOW_LABEL}. Cancelas a tarefa ou tinha de a fazer?`,
+        `${d.from_person} não consegue fazer "${d.task_name}"${when}. ${answers} (ainda podem aceitar). Cancelas a tarefa ou tinha de a fazer?`,
         "/pais",
         `delegation-unanswered-${d.id}`,
       );
       await push(
         d.from_person,
-        `⌛ Ninguém aceitou: ${d.task_name}`,
-        `Passaram ${ACCEPT_WINDOW_LABEL} sem nenhum irmão aceitar. Os pais vão decidir se a cancelam.`,
+        `⌛ Ninguém aceitou ainda: ${d.task_name}`,
+        "Os pais foram avisados. Os irmãos ainda podem aceitar — e se ninguém aceitar, não conta como falha.",
         "/",
         `delegation-unanswered-${d.id}`,
       );
     }
 
     console.log("[close-unanswered-delegations]", JSON.stringify({
-      closed: closed.map((d) => d.id), done_anyway: doneAnyway.map((d) => d.id),
+      parents_told: closed.map((d) => d.id), done_anyway: doneAnyway.map((d) => d.id),
     }));
 
-    return new Response(JSON.stringify({ closed: closed.length, done_anyway: doneAnyway.length }),
+    return new Response(JSON.stringify({ parents_told: closed.length, done_anyway: doneAnyway.length }),
       { headers: { "Content-Type": "application/json", ...corsHeaders } });
   } catch (err) {
     console.error("close-unanswered-delegations failed:", err);

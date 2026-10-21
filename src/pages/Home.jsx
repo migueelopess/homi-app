@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   tasksQuery, scheduledTasksQuery, occasionalTasksQuery,
-  delegationsQuery, cancellationsQuery, lastPaidAtQuery,
+  delegationsQuery, cancellationsQuery, lastPaidAtQuery, extensionsByDateQuery, extensionRequestsQuery,
 } from '@/lib/queries';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { PEOPLE, getCurrentWeekKey, getWeekTasks, getLocalDateStr, applyCancellations } from '@/lib/taskHelpers';
@@ -62,6 +62,11 @@ export default function Home() {
 
   const { data: lastPaidAts = {} } = useQuery(lastPaidAtQuery());
 
+  // More time the parents gave today moves that task's reminders.
+  const isChild = !userIsParent && !!person;
+  const { data: extensions = EMPTY } = useQuery({ ...extensionsByDateQuery(getLocalDateStr()), enabled: isChild });
+  const { data: extensionRequests = EMPTY } = useQuery({ ...extensionRequestsQuery(), enabled: isChild });
+
   const weekTasks = useMemo(() => getWeekTasks(tasks, currentWeek), [tasks, currentWeek]);
 
   const today = getLocalDateStr();
@@ -100,6 +105,8 @@ export default function Home() {
     occasionalTasks: myOccasionalTasks,
     delegations: allDelegations,
     cancellations,
+    extensions,
+    extensionRequests,
   });
 
   const isLoading = isLoadingTasks || isLoadingScheduled;

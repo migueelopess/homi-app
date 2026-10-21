@@ -77,6 +77,7 @@ Deno.serve(async (req) => {
       deleted_delegations: 0,
       deleted_cancellations: 0,
       deleted_extensions: 0,
+      deleted_extension_requests: 0,
       carried_over: {} as Record<string, number>,
     };
 
@@ -260,6 +261,17 @@ Deno.serve(async (req) => {
       console.error("Error deleting extensions:", deleteExtErr);
     } else {
       summary.deleted_extensions = extCount || 0;
+    }
+
+    const { error: deleteExtReqErr, count: extReqCount } = await supabase
+      .from("extension_requests")
+      .delete({ count: "exact" })
+      .lt("task_date", cutoffDate);
+
+    if (deleteExtReqErr) {
+      console.error("Error deleting extension requests:", deleteExtReqErr);
+    } else {
+      summary.deleted_extension_requests = extReqCount || 0;
     }
 
     // 8. Log the cleanup date so all devices know the boundary

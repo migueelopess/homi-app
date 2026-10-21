@@ -1,13 +1,18 @@
 import { useState, useRef } from 'react';
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { TaskDelegationService } from '@/api/entities';
-import { delegationsQuery, extensionsByDateQuery, cancellationsQuery, INVALIDATE } from '@/lib/queries';
+import { TaskDelegationService, ExtensionRequestService } from '@/api/entities';
+import { delegationsQuery, extensionsByDateQuery, extensionRequestsQuery, cancellationsQuery, INVALIDATE } from '@/lib/queries';
 import { sendPushNotification } from '@/api/supabaseClient';
-import { Clock, CheckCircle2, Circle, Star, ArrowRightLeft } from 'lucide-react';
+import { Clock, CheckCircle2, Circle, Star, ArrowRightLeft, Hourglass } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { motion } from 'framer-motion';
-import { TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, DELEGATION_ACCEPT_WINDOW_LABEL, sameTaskSlot, scheduledOccurrence, occasionalOccurrence, delegationOccurrence, settlesSlot } from '@/lib/taskHelpers';
+import {
+  TASK_ICONS, PEOPLE, PERSON_AVATARS, getLocalDateStr, DELEGATION_ACCEPT_WINDOW_LABEL,
+  scheduledOccurrence, occasionalOccurrence, delegationOccurrence, settlesSlot,
+  EXTENSION_REQUEST_STATUS, EXTRA_TIME_OPTIONS, effectiveDeadline, requestedUntil, untilLabel,
+  extensionFor, extensionRequestFor,
+} from '@/lib/taskHelpers';
 import TaskCapture from './TaskCapture';
 import Portal from '@/components/layout/Portal';
 import { toast } from 'sonner';
@@ -36,6 +41,51 @@ function isOverdue(endTime) {
   const end = new Date();
   end.setHours(h, m, 0);
   return now > end;
+}
+
+// The deadline line on a card. With more time given it shows the new one and
+// what it was: "Até às 20:00 (era 19:00)".
+function DeadlineLine({ endTime, extension }) {
+  if (!endTime && !extension) return null;
+  const deadline = effectiveDeadline(endTime, extension);
+  return (
+    <div className="flex items-center gap-1 mt-0.5">
+      <Clock className="w-3 h-3 text-muted-foreground" />
+      <span className="text-[11px] text-muted-foreground">
+        {extension
+          ? <>{deadline ? `Até às ${deadline}` : 'Até ao fim do dia'}{endTime && <span className="opacity-70"> (era {endTime})</span>}</>
+          : `Até às ${endTime}`}
+      </span>
+    </div>
+  );
+}
+
+// Where my request for more time stands. Once granted the deadline line above
+// already shows the new time; this says who gave it.
+function ExtensionNote({ request, extension }) {
+  const status = request?.status;
+  if (status === EXTENSION_REQUEST_STATUS.PENDING) {
+    return (
+      <p className="text-[11px] font-medium mt-0.5 text-amber-600 dark:text-amber-400">
+        ⏳ Pediste mais tempo {untilLabel(request.until_time)} — à espera dos pais
+      </p>
+    );
+  }
+  if (status === EXTENSION_REQUEST_STATUS.REFUSED) {
+    return (
+      <p className="text-[11px] font-medium mt-0.5 text-red-600 dark:text-red-400">
+        ❌ Os pais disseram que não — o prazo mantém-se
+      </p>
+    );
+  }
+  if (extension) {
+    return (
+      <p className="text-[11px] font-medium mt-0.5 text-green-700 dark:text-green-400">
+        ✅ Os pais deram-te mais tempo
+      </p>
+    );
+  }
+  return null;
 }
 
 function isActive(startTime, endTime) {
@@ -68,6 +118,10 @@ function RequestOutcome({ request }) {
 export default function TodaySchedule({ scheduledTasks, todayTasks, person, occasionalTasks = [] }) {
   const captureRef = useRef(null);
   const [delegateConfirm, setDelegateConfirm] = useState(null);
+  // The task I am asking more time for, and what I picked.
+  const [askTime, setAskTime] = useState(null);
+  const [askMinutes, setAskMinutes] = useState(EXTRA_TIME_OPTIONS[1].minutes);
+  const [askReason, setAskReason] = useState('');
   const queryClient = useQueryClient();
   const todayKey = getTodayKey();
   const today = getLocalDateStr();
@@ -75,6 +129,17 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
   const { data: delegations = [] } = useQuery(delegationsQuery());
   // Extensions and cancellations the parents granted for today.
   const { data: extensions = [] } = useQuery(extensionsByDateQuery(today));
+  // My requests for more time — polled, so the parents' answer shows up.
+  const { data: extensionRequests = [] } = useQuery(extensionRequestsQuery());
+  const extensionOf = (task) => extensionFor({
+    extensions, requests: extensionRequests, person, taskName: task.task_name, endTime: task.end_time, date: today,
+  });
+  const extensionRequestOf = (task) =>
+    extensionRequestFor(extensionRequests, person, task.task_name, task.end_time, today);
+  // Asking for more time needs a deadline to move, and is one or the other
+  // with delegating: no request if the task was delegated, extended or asked.
+  const canAskTime = (task, delegationRequest) =>
+    !!task.end_time && !delegationRequest && !extensionOf(task) && !extensionRequestOf(task);
   // The full list is already loaded by the Home page itself, so reading it here
   // costs no extra request on opening the app; a per-day query did.
   const { data: cancellations = [] } = useQuery(cancellationsQuery());
@@ -174,6 +239,43 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
     },
   });
 
+  const askTimeMutation = useMutation({
+    mutationFn: ({ taskType, scheduledTaskId, occasionalTaskId, taskName, endTime, reward, untilTime, reason }) =>
+      ExtensionRequestService.create({
+        person,
+        task_type: taskType,
+        scheduled_task_id: scheduledTaskId || null,
+        occasional_task_id: occasionalTaskId || null,
+        task_name: taskName,
+        task_date: today,
+        end_time: endTime || null,
+        until_time: untilTime,
+        reward: taskType === 'occasional' && reward != null ? reward : null,
+        reason: reason || null,
+      }),
+    onSuccess: (data, { taskName, endTime, untilTime, reason }) => {
+      queryClient.invalidateQueries({ queryKey: INVALIDATE.extensionRequests });
+      toast.success('Pedido enviado aos pais!');
+      setAskTime(null);
+      sendPushNotification({
+        person: '__parents__',
+        title: `⏰ ${person} pede mais tempo`,
+        body: `"${taskName}" (${endTime} → ${untilTime ?? 'fim do dia'})${reason ? ` — ${reason}` : ''}`,
+        url: '/pais',
+        tag: `extension-request-${data.id}`,
+      });
+    },
+    onError: (err) => {
+      toast.error(err?.code === '23505' ? 'Já pediste mais tempo para esta tarefa.' : 'Erro ao enviar o pedido.');
+      setAskTime(null);
+    },
+  });
+
+  const openAskTime = (task) => {
+    setAskMinutes(EXTRA_TIME_OPTIONS[1].minutes);
+    setAskReason('');
+    setAskTime(task);
+  };
 
   const totalAll = todaySchedule.length + todayOccasional.length + delegatedScheduledToMe.length + delegatedOccasionalToMe.length;
   const doneScheduled = todaySchedule.filter(t => isTaskDone(t, todayTasks)).length;
@@ -205,8 +307,10 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
 
         {/* Occasional tasks for today */}
         {todayOccasional.map((task, i) => {
-          const isExtended = extensions.some(e => e.person === person && e.task_name === task.task_name && sameTaskSlot(e.end_time, task.end_time));
-          const overdue = !isExtended && isOverdue(task.end_time);
+          const extension = extensionOf(task);
+          const overdue = isOverdue(effectiveDeadline(task.end_time, extension));
+          const delegationRequest = myRequestFor('occasional', task.id);
+          const timeRequest = extensionRequestOf(task);
           return (
             <motion.div
               key={`occ-${task.id}`}
@@ -219,23 +323,28 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                   overdue ? 'border-destructive/40 bg-destructive/5' : ''
                 }`}
               >
-                <div className="text-xl flex-shrink-0 cursor-pointer" onClick={() => captureRef.current?.capture({ ...task, _occasional: true, _isExtended: isExtended })}>{TASK_ICONS[task.task_name] || '✅'}</div>
-                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => captureRef.current?.capture({ ...task, _occasional: true, _isExtended: isExtended })}>
+                <div className="text-xl flex-shrink-0 cursor-pointer" onClick={() => captureRef.current?.capture({ ...task, _occasional: true, _extension: extension })}>{TASK_ICONS[task.task_name] || '✅'}</div>
+                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => captureRef.current?.capture({ ...task, _occasional: true, _extension: extension })}>
                   <div className="flex items-center gap-1.5">
                     <p className="text-sm font-semibold text-foreground">{task.task_name}</p>
                     <Star className="w-3 h-3 text-accent fill-accent" />
                   </div>
-                  {task.end_time && (
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <Clock className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-[11px] text-muted-foreground">Até às {task.end_time}</span>
-                    </div>
-                  )}
+                  <DeadlineLine endTime={task.end_time} extension={extension} />
                   {task.notes && <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{task.notes}</p>}
-                  <RequestOutcome request={myRequestFor('occasional', task.id)} />
+                  <RequestOutcome request={delegationRequest} />
+                  <ExtensionNote request={timeRequest} extension={extension} />
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {!myRequestFor('occasional', task.id) && (
+                  {canAskTime(task, delegationRequest) && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openAskTime({ taskType: 'occasional', occasionalTaskId: task.id, taskName: task.task_name, endTime: task.end_time, reward: task.reward }); }}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-amber-600 hover:bg-amber-500/10 transition-colors"
+                      title="Pedir mais tempo"
+                    >
+                      <Hourglass className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {!delegationRequest && !timeRequest && !extension && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setDelegateConfirm({ taskType: 'occasional', occasionalTaskId: task.id, taskName: task.task_name, endTime: task.end_time, reward: task.reward }); }}
                       className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
@@ -244,10 +353,10 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                       <ArrowRightLeft className="w-3.5 h-3.5" />
                     </button>
                   )}
-                  {isExtended ? (
-                    <Badge className="bg-amber-500/10 text-amber-600 border-0 text-[10px]">Extendida</Badge>
-                  ) : overdue ? (
+                  {overdue ? (
                     <Badge variant="destructive" className="text-[10px]">Atrasado</Badge>
+                  ) : extension ? (
+                    <Badge className="bg-amber-500/10 text-amber-600 border-0 text-[10px]">Mais tempo</Badge>
                   ) : (
                     <Badge className="bg-accent/20 text-accent-foreground border-0 text-[10px]">Especial</Badge>
                   )}
@@ -297,9 +406,12 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
 
         {todaySchedule.map((task, i) => {
           const isDone = isTaskDone(task, todayTasks);
-          const isExtended = extensions.some(e => e.person === person && e.task_name === task.task_name && sameTaskSlot(e.end_time, task.end_time));
-          const overdue = !isDone && !isExtended && isOverdue(task.end_time);
-          const active = isActive(task.start_time, task.end_time);
+          const extension = extensionOf(task);
+          const deadline = effectiveDeadline(task.end_time, extension);
+          const overdue = !isDone && isOverdue(deadline);
+          const active = isActive(task.start_time, deadline);
+          const delegationRequest = myRequestFor('scheduled', task.id);
+          const timeRequest = extensionRequestOf(task);
 
           return (
             <motion.div
@@ -316,21 +428,26 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                   'cursor-pointer hover:border-primary/20 active:scale-[0.98]'
                 }`}
               >
-                <div className="text-xl flex-shrink-0" onClick={() => !isDone && captureRef.current?.capture({ ...task, _isExtended: isExtended })}>{TASK_ICONS[task.task_name] || '✅'}</div>
-                <div className="flex-1 min-w-0" onClick={() => !isDone && captureRef.current?.capture({ ...task, _isExtended: isExtended })}>
+                <div className="text-xl flex-shrink-0" onClick={() => !isDone && captureRef.current?.capture({ ...task, _extension: extension })}>{TASK_ICONS[task.task_name] || '✅'}</div>
+                <div className="flex-1 min-w-0" onClick={() => !isDone && captureRef.current?.capture({ ...task, _extension: extension })}>
                   <p className={`text-sm font-semibold ${isDone ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
                     {task.task_name}
                   </p>
-                  {task.end_time && (
-                    <div className="flex items-center gap-1 mt-0.5">
-                      <Clock className="w-3 h-3 text-muted-foreground" />
-                      <span className="text-[11px] text-muted-foreground">Até às {task.end_time}</span>
-                    </div>
-                  )}
-                  {!isDone && <RequestOutcome request={myRequestFor('scheduled', task.id)} />}
+                  <DeadlineLine endTime={task.end_time} extension={extension} />
+                  {!isDone && <RequestOutcome request={delegationRequest} />}
+                  {!isDone && <ExtensionNote request={timeRequest} extension={extension} />}
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {!isDone && !myRequestFor('scheduled', task.id) && (
+                  {!isDone && canAskTime(task, delegationRequest) && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openAskTime({ taskType: 'scheduled', scheduledTaskId: task.id, taskName: task.task_name, endTime: task.end_time }); }}
+                      className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-amber-600 hover:bg-amber-500/10 transition-colors"
+                      title="Pedir mais tempo"
+                    >
+                      <Hourglass className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {!isDone && !delegationRequest && !timeRequest && !extension && (
                     <button
                       onClick={(e) => { e.stopPropagation(); setDelegateConfirm({ taskType: 'scheduled', scheduledTaskId: task.id, taskName: task.task_name, endTime: task.end_time }); }}
                       className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
@@ -343,6 +460,8 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
                     <CheckCircle2 className="w-5 h-5 text-primary" />
                   ) : overdue ? (
                     <Badge variant="destructive" className="text-[10px]">Atrasado</Badge>
+                  ) : extension ? (
+                    <Badge className="bg-amber-500/10 text-amber-600 border-0 text-[10px]">Mais tempo</Badge>
                   ) : active ? (
                     <Badge className="bg-primary/15 text-primary border-0 text-[10px]">Agora</Badge>
                   ) : (
@@ -400,6 +519,83 @@ export default function TodaySchedule({ scheduledTasks, todayTasks, person, occa
 
       {/* Hidden camera input — tap a task, take the photo, done. */}
       <TaskCapture ref={captureRef} person={person} />
+
+      {/* Ask the parents for more time. */}
+      {askTime && (
+        <Portal>
+        <div className="fixed inset-0 bg-black/40 z-[60] flex items-end" onClick={() => setAskTime(null)}>
+          <div className="w-full bg-card rounded-t-3xl p-6 pb-24 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-3xl">{TASK_ICONS[askTime.taskName] || '✅'}</span>
+              <div>
+                <h3 className="font-bold text-lg text-foreground">Pedir mais tempo</h3>
+                <p className="text-sm text-muted-foreground">{askTime.taskName} · até às {askTime.endTime}</p>
+              </div>
+            </div>
+            <p className="text-sm text-muted-foreground mb-3">
+              Os pais decidem. Se disserem que sim, feita até à nova hora conta como a tempo.
+            </p>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {EXTRA_TIME_OPTIONS
+                // Late in the evening +1 h and +2 h both stop at 23:59 — one is enough.
+                .filter((opt, i, all) => i === 0 || opt.minutes == null ||
+                  requestedUntil(askTime.endTime, opt.minutes) !== requestedUntil(askTime.endTime, all[i - 1].minutes))
+                .map(opt => {
+                const until = requestedUntil(askTime.endTime, opt.minutes);
+                const selected = askMinutes === opt.minutes;
+                return (
+                  <button
+                    key={opt.label}
+                    onClick={() => setAskMinutes(opt.minutes)}
+                    className={`py-2.5 rounded-xl text-sm font-bold border transition-colors ${
+                      selected ? 'bg-amber-500 text-white border-amber-500' : 'bg-muted/50 text-foreground border-border'
+                    }`}
+                  >
+                    {opt.label}
+                    {until && <span className={`block text-[11px] font-medium ${selected ? 'text-white/85' : 'text-muted-foreground'}`}>até às {until}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              type="text"
+              value={askReason}
+              maxLength={120}
+              onChange={e => setAskReason(e.target.value)}
+              placeholder="Porquê? (opcional) — ex.: estou no treino"
+              className="w-full h-11 px-3 mb-4 rounded-xl bg-muted/50 border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+            />
+            <button
+              disabled={askTimeMutation.isPending}
+              onClick={() => askTimeMutation.mutate({
+                ...askTime,
+                untilTime: requestedUntil(askTime.endTime, askMinutes),
+                reason: askReason.trim(),
+              })}
+              className="w-full py-3 rounded-2xl bg-amber-500 text-white font-bold text-sm disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {askTimeMutation.isPending ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  A enviar...
+                </>
+              ) : (
+                <>
+                  <Hourglass className="w-4 h-4" />
+                  Pedir aos pais
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => setAskTime(null)}
+              className="w-full py-3 mt-2 rounded-2xl bg-muted text-muted-foreground font-medium text-sm"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+        </Portal>
+      )}
 
       {/* Delegation confirmation dialog — portaled so the fixed overlay can't be
           trapped by a transformed ancestor (framer-motion card / page wrapper). */}

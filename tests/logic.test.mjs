@@ -20,6 +20,8 @@ import {
   isDelegationOpen, minutesLeftToAccept, delegationNeedsParents, DELEGATION_STATUS,
   isDelegationOpenFor, siblingAnswers, siblingsOf, DELEGATION_ACCEPT_WINDOW_LABEL, isTaskPaid,
   getWeekStartDate, getWeekEndDate, getWeekKey, getLocalDateStr,
+  effectiveDeadline, requestedUntil, extensionFor, extensionRequestFor, pendingExtensionRequests,
+  extensionRequestOrdinal, correctedForExtension, completionValue, untilLabel,
 } from '../src/lib/taskHelpers.js';
 
 import { planPurge } from '../supabase/functions/purge-paid/plan.ts';
@@ -187,10 +189,85 @@ t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_
     completionTypeFor({ endTime: '19:00', at, delegated: true }), 'on_time_no_reminder');
   t('a delegated task still honours a parent reminder',
     completionTypeFor({ endTime: '19:00', at, delegated: true, hasReminder: true }), 'on_time_with_reminder');
-  t('an extension still makes my own late task on time',
-    completionTypeFor({ endTime: '19:00', at, extended: true }), 'on_time_no_reminder');
+  t('an old extension (no new time) still makes my own late task on time',
+    completionTypeFor({ endTime: '19:00', at, extension: { until_time: null } }), 'on_time_no_reminder');
   t('my own task before its deadline is on time',
     completionTypeFor({ endTime: '19:00', at: new Date(2026, 9, 12, 18, 50) }), 'on_time_no_reminder');
+}
+
+// ===== More time: the child asks, the parents give a new deadline =====
+{
+  const day = '2026-10-21';
+  const at = (h, m) => new Date(2026, 9, 21, h, m);
+
+  // The new deadline replaces the old one — both ways.
+  t('more time until 20:00: done at 19:35 is on time',
+    completionTypeFor({ endTime: '19:00', at: at(19, 35), extension: { until_time: '20:00' } }), 'on_time_no_reminder');
+  t('more time until 20:00: done at 20:10 is still late',
+    completionTypeFor({ endTime: '19:00', at: at(20, 10), extension: { until_time: '20:00' } }), 'late');
+  t('more time with a parent reminder pays the reminder rate',
+    completionTypeFor({ endTime: '19:00', at: at(19, 35), hasReminder: true, extension: { until_time: '20:00' } }), 'on_time_with_reminder');
+  t('no extension: the task keeps its own deadline', effectiveDeadline('19:00', null), '19:00');
+  t('"until the end of the day" has no deadline', effectiveDeadline('19:00', { until_time: null }), null);
+
+  // What a child is asking for.
+  t('+1 h asked before the deadline counts from the deadline', requestedUntil('19:00', 60, at(18, 10)), '20:00');
+  t('+1 h asked after the deadline counts from now', requestedUntil('19:00', 60, at(19, 40)), '20:40');
+  t('more time never crosses midnight', requestedUntil('23:30', 120, at(23, 0)), '23:59');
+  t('"até ao fim do dia" asks for no time', requestedUntil('19:00', null, at(18, 0)), null);
+  t('label for a time', untilLabel('20:00'), 'até às 20:00');
+  t('label for the rest of the day', untilLabel(null), 'até ao fim do dia');
+
+  // Matching a task: person, day, name and exact slot.
+  const req = { id: 'x1', person: 'Pedro', task_name: 'Máquina da louça', task_date: day, end_time: '19:00',
+                until_time: '20:00', status: 'pending', created_at: '2026-10-21T17:00:00Z' };
+  t('a request is found for its own task', extensionRequestFor([req], 'Pedro', 'Máquina da louça', '19:00', day)?.id, 'x1');
+  t('not for the same task at another hour', extensionRequestFor([req], 'Pedro', 'Máquina da louça', '13:00', day), null);
+  t('not for a sibling', extensionRequestFor([req], 'Inês', 'Máquina da louça', '19:00', day), null);
+  t('not on another day', extensionRequestFor([req], 'Pedro', 'Máquina da louça', '19:00', '2026-10-22'), null);
+
+  const lookup = (extensions, requests) => extensionFor({
+    extensions, requests, person: 'Pedro', taskName: 'Máquina da louça', endTime: '19:00', date: day });
+  t('a pending request gives no extra time', lookup([], [req]), null);
+  t('a refused request gives no extra time', lookup([], [{ ...req, status: 'refused' }]), null);
+  t('a granted request counts before extensions are refetched',
+    lookup([], [{ ...req, status: 'granted' }])?.until_time, '20:00');
+  t('a real extension row wins over the request',
+    lookup([{ person: 'Pedro', task_name: 'Máquina da louça', task_date: day, end_time: '19:00', until_time: '19:30' }],
+           [{ ...req, status: 'granted' }])?.until_time, '19:30');
+
+  // The parents' list: only today's still-open requests.
+  t("today's pending request is waiting", pendingExtensionRequests([req], day).length, 1);
+  t("yesterday's lapsed with its day", pendingExtensionRequests([req], '2026-10-22').length, 0);
+  t('an answered one is not waiting', pendingExtensionRequests([{ ...req, status: 'granted' }], day).length, 0);
+
+  // "3.º pedido esta semana" (2026-10-19 is a Monday, 10-18 the Sunday before)
+  const week = [
+    { ...req, id: 'a', task_date: '2026-10-18', created_at: '2026-10-18T10:00:00Z' },
+    { ...req, id: 'b', task_date: '2026-10-19', created_at: '2026-10-19T10:00:00Z' },
+    { ...req, id: 'c', task_date: '2026-10-20', created_at: '2026-10-20T10:00:00Z' },
+    { ...req, id: 'd', person: 'Inês', task_date: '2026-10-20', created_at: '2026-10-20T11:00:00Z' },
+    req,
+  ];
+  t('third request of the week (last week and siblings not counted)', extensionRequestOrdinal(week, req), 3);
+  t('first request of the week', extensionRequestOrdinal(week, week[1]), 1);
+
+  // Answered late: a photo already filed as late is corrected.
+  const late = { completion_type: 'late', created_date: at(19, 35).toISOString() };
+  t('late at 19:35, granted until 20:00 → on time', correctedForExtension(late, '20:00'), 'on_time_no_reminder');
+  t('…with a reminder → the reminder rate', correctedForExtension(late, '20:00', true), 'on_time_with_reminder');
+  t('late at 19:35, granted until 19:30 → stays late', correctedForExtension(late, '19:30'), null);
+  t('granted until the end of the day → on time', correctedForExtension(late, null), 'on_time_no_reminder');
+  t('an on-time row is never touched',
+    correctedForExtension({ completion_type: 'on_time_no_reminder', created_date: late.created_date }, '20:00'), null);
+  t('a failure is never turned into a completion',
+    correctedForExtension({ completion_type: 'not_done', created_date: late.created_date }, null), null);
+
+  // Value of the corrected row
+  t('standard task on time pays €1', completionValue({ taskName: 'Máquina da louça', completionType: 'on_time_no_reminder' }), 1);
+  t('occasional reward on time pays the reward', completionValue({ taskName: 'X', completionType: 'on_time_no_reminder', reward: 3 }), 3);
+  t('occasional reward late pays a quarter', completionValue({ taskName: 'X', completionType: 'late', reward: 3 }), 0.75);
+  t('own Sidney chore stays €0', completionValue({ taskName: 'Passear Sidney', completionType: 'on_time_no_reminder' }), 0);
 }
 
 // ===== Delegation requests: one hour to accept, then the parents decide =====

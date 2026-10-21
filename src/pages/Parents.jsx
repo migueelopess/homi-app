@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { TaskService, PaymentService, TaskCancellationService } from '@/api/entities';
-import { tasksQuery, cancellationsQuery, pendingTasksQuery, lastPaidAtQuery, delegationsQuery, INVALIDATE } from '@/lib/queries';
+import { tasksQuery, cancellationsQuery, pendingTasksQuery, lastPaidAtQuery, delegationsQuery, extensionRequestsQuery, INVALIDATE } from '@/lib/queries';
 import DelegationRanking from '@/components/delegations/DelegationRanking';
 import UnansweredDelegations from '@/components/parents/UnansweredDelegations';
+import ExtensionRequests from '@/components/parents/ExtensionRequests';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { Lock, ChevronDown, ChevronUp, Eye, Trash2, TrendingUp, Loader2, Check, AlertTriangle, Ban, Euro } from 'lucide-react';
 import PhotoModal from '@/components/parents/PhotoModal';
 import ApprovalsTab from '@/components/parents/ApprovalsTab';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { supabase, sendPushNotification } from '@/api/supabaseClient';
-import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, isBonusBlock, isChore, isAwaitingDecision, isTaskPaid, getLocalDateStr, applyCancellations, FINE_AMOUNT, FINE_TASK_NAME, ADJUSTMENT_COMPLETION_TYPE, completionMoment, formatMoney, delegationNeedsParents } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, PENALTIES, COMPLETION_TYPES, getCurrentWeekKey, getCurrentMonthKey, getWeekTasks, getMonthTasks, calculateEarnings, checkWeeklyBonus, WEEKLY_BONUS, countFailures, getTaskIcon, isBonusTask, isBonusBlock, isChore, isAwaitingDecision, isTaskPaid, getLocalDateStr, applyCancellations, FINE_AMOUNT, FINE_TASK_NAME, ADJUSTMENT_COMPLETION_TYPE, completionMoment, formatMoney, delegationNeedsParents, pendingExtensionRequests } from '@/lib/taskHelpers';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -62,6 +63,14 @@ export default function Parents() {
 
   // Requests for help nobody accepted, waiting for a parent's decision.
   const unansweredCount = delegations.filter(d => delegationNeedsParents(d, tasks)).length;
+
+  // Children asking for more time today.
+  const { data: extensionRequests = [] } = useQuery({
+    ...extensionRequestsQuery(),
+    enabled: isParent(user),
+  });
+  const extensionRequestCount = pendingExtensionRequests(extensionRequests).length;
+  const approvalsBadge = pendingCount + unansweredCount + extensionRequestCount;
 
   const deleteMutation = useMutation({
     mutationFn: async (task) => {
@@ -480,9 +489,9 @@ export default function Parents() {
         <TabsList className="w-full grid grid-cols-3 mb-5 h-11 rounded-xl">
           <TabsTrigger value="approvals" className="rounded-lg font-semibold gap-1.5">
             Aprovações
-            {pendingCount + unansweredCount > 0 && (
+            {approvalsBadge > 0 && (
               <Badge className="bg-amber-500 text-white text-[10px] border-0 px-1.5 h-4 leading-none">
-                {pendingCount + unansweredCount}
+                {approvalsBadge}
               </Badge>
             )}
           </TabsTrigger>
@@ -491,6 +500,7 @@ export default function Parents() {
         </TabsList>
 
         <TabsContent value="approvals" className="space-y-3">
+          <ExtensionRequests requests={extensionRequests} tasks={tasks} deciderId={user?.id} />
           <UnansweredDelegations delegations={delegations} tasks={tasks} deciderId={user?.id} />
           <ApprovalsTab approverId={user?.id} />
         </TabsContent>

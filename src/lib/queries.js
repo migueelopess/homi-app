@@ -1,8 +1,9 @@
 import {
   TaskService, ScheduledTaskService, OccasionalTaskService,
   TaskDelegationService, TaskCancellationService, TaskExtensionService,
-  TaskReminderService, PaymentService,
+  TaskReminderService, PaymentService, ExtensionRequestService,
 } from '@/api/entities';
+import { getLocalDateStr } from '@/lib/taskHelpers';
 
 // Single source of truth for the shared server queries.
 //
@@ -77,6 +78,19 @@ export const extensionsByDateQuery = (date) => ({
   queryFn: () => TaskExtensionService.getByDate(date),
 });
 
+// Requests for more time from the last week — today's are the ones that can
+// still be answered; the week's are for "3.º pedido esta semana". Polled: a
+// child waits on the parents' answer, and the parents on new requests.
+export const extensionRequestsQuery = () => ({
+  queryKey: ['extensionRequests'],
+  queryFn: () => {
+    const since = new Date();
+    since.setDate(since.getDate() - 7);
+    return ExtensionRequestService.listSince(getLocalDateStr(since));
+  },
+  refetchInterval: LIVE_INTERVAL_MS,
+});
+
 // One key for everyone. This was the sharpest of the mismatches: the children's
 // screens read reminders under ['taskReminders', person, date] while the
 // parents' page invalidated ['taskReminders', date], which matches neither. A
@@ -104,6 +118,7 @@ export const INVALIDATE = {
   delegations: ['taskDelegations'],
   cancellations: ['taskCancellations'],
   extensions: ['taskExtensions'],
+  extensionRequests: ['extensionRequests'],
   reminders: ['taskReminders'],
   payments: ['payments'],
 };

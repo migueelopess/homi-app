@@ -181,6 +181,19 @@ Deno.serve(async (req) => {
       return c.task_name === occurrence.task_name && sameTaskSlot(c.end_time, occurrence.end_time);
     });
 
+    // 0d. More time the parents gave today. Its `until_time` is the task's
+    // deadline for today, so the reminders move with it; with no until_time
+    // ("until the end of the day") there is no deadline to remind about. Keyed
+    // apart from the original reminders, which may already have gone out.
+    const { data: todayExtensions } = await supabase
+      .from("task_extensions")
+      .select("person, task_name, end_time, until_time")
+      .eq("task_date", todayStr);
+
+    const extensionOf = (person: string, taskName: string, endTime: string | null) =>
+      (todayExtensions || []).find((e) =>
+        e.person === person && e.task_name === taskName && sameTaskSlot(e.end_time, endTime)) ?? null;
+
     // 1. Get all scheduled tasks for today's day of week
     const { data: scheduledTasks } = await supabase
       .from("scheduled_tasks")
@@ -236,7 +249,13 @@ Deno.serve(async (req) => {
       if (delegation) scheduledKeys.add(`d:${delegation.id}`);
       if (isCancelled(scheduledKeys, ownOccurrence, task.person, targetPerson)) continue;
 
-      const [h, m] = task.end_time.split(":").map(Number);
+      // A handed-over task cannot be late, so an extension means nothing there.
+      const extension = delegation ? null : extensionOf(task.person, task.task_name, task.end_time);
+      if (extension && !extension.until_time) continue;
+      const deadline: string = extension?.until_time ?? task.end_time;
+      const extKey = extension ? `:until-${extension.until_time}` : "";
+
+      const [h, m] = deadline.split(":").map(Number);
       const deadlineMinutes = h * 60 + m;
       const minutesUntilDeadline = deadlineMinutes - currentTotalMinutes;
 
@@ -268,7 +287,7 @@ Deno.serve(async (req) => {
 
       // 15 minutes before reminder (window: 10-15 min before)
       if (minutesUntilDeadline >= 1 && minutesUntilDeadline <= 15) {
-        const key = `scheduled:${task.id}:${todayStr}:reminder`;
+        const key = `scheduled:${task.id}:${todayStr}:reminder${extKey}`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase
             .from("push_subscriptions")
@@ -294,7 +313,7 @@ Deno.serve(async (req) => {
       // never be late for the one who took it, so "the deadline has passed"
       // would be wrong for them.
       if (!delegation && minutesUntilDeadline >= -14 && minutesUntilDeadline <= 0) {
-        const key = `scheduled:${task.id}:${todayStr}:deadline`;
+        const key = `scheduled:${task.id}:${todayStr}:deadline${extKey}`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase
             .from("push_subscriptions")
@@ -335,7 +354,13 @@ Deno.serve(async (req) => {
       };
       if (isCancelled(occasionalKeys, occasionalOccurrence, task.person, targetPerson)) continue;
 
-      const [h, m] = task.end_time.split(":").map(Number);
+      // More time given moves the deadline (see the scheduled loop).
+      const extension = delegation ? null : extensionOf(task.person, task.task_name, task.end_time);
+      if (extension && !extension.until_time) continue;
+      const deadline: string = extension?.until_time ?? task.end_time;
+      const extKey = extension ? `:until-${extension.until_time}` : "";
+
+      const [h, m] = deadline.split(":").map(Number);
       const deadlineMinutes = h * 60 + m;
       const minutesUntilDeadline = deadlineMinutes - currentTotalMinutes;
 
@@ -366,7 +391,7 @@ Deno.serve(async (req) => {
 
       // 15 minutes before
       if (minutesUntilDeadline >= 1 && minutesUntilDeadline <= 15) {
-        const key = `occasional:${task.id}:${todayStr}:reminder`;
+        const key = `occasional:${task.id}:${todayStr}:reminder${extKey}`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase
             .from("push_subscriptions")
@@ -390,7 +415,7 @@ Deno.serve(async (req) => {
 
       // At deadline (not for delegated tasks — see the scheduled loop)
       if (!delegation && minutesUntilDeadline >= -14 && minutesUntilDeadline <= 0) {
-        const key = `occasional:${task.id}:${todayStr}:deadline`;
+        const key = `occasional:${task.id}:${todayStr}:deadline${extKey}`;
         if (await markAsSent(key)) {
           const { data: subs } = await supabase
             .from("push_subscriptions")

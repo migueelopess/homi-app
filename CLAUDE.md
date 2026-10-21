@@ -35,10 +35,10 @@ the flow.
 
 - **Frontend:** React 18 + Vite 6, React Router, TanStack Query for server state.
 - **Backend:** Supabase (Postgres + Auth + Edge Functions) on the **free plan's Nano instance — 426 MB of RAM** shared by Postgres, PostgREST, auth and storage. That is the binding constraint on everything below. Project ref `yjnyznhqheerjpqprggm`.
-- **Data access:** All Supabase calls go through the service objects in [src/api/entities.js](src/api/entities.js) — `TaskService`, `ScheduledTaskService`, `OccasionalTaskService`, `TaskReminderService`, `TaskDelegationService`, `TaskExtensionService`, `TaskCancellationService`, `PaymentService`, `CleanupLogService`. Add DB access here, not inline in components.
-- **Tables:** `tasks`, `scheduled_tasks`, `occasional_tasks`, `task_reminders`, `task_delegations`, `task_extensions`, `task_cancellations`, `payments`, `cleanup_log` (+ push subscription tables).
+- **Data access:** All Supabase calls go through the service objects in [src/api/entities.js](src/api/entities.js) — `TaskService`, `ScheduledTaskService`, `OccasionalTaskService`, `TaskReminderService`, `TaskDelegationService`, `TaskExtensionService`, `ExtensionRequestService`, `TaskCancellationService`, `PaymentService`, `CleanupLogService`. Add DB access here, not inline in components.
+- **Tables:** `tasks`, `scheduled_tasks`, `occasional_tasks`, `task_reminders`, `task_delegations`, `task_extensions`, `extension_requests`, `task_cancellations`, `payments`, `cleanup_log` (+ push subscription tables).
 - **Auth:** [src/lib/AuthContext.jsx](src/lib/AuthContext.jsx) provides `AuthProvider` / `useAuth`. `App.jsx` gates routes on `isAuthenticated`.
-- **Freshness:** polling, not Realtime. Everything refetches on opening or returning to the app if older than 2 minutes; while the app stays open only tasks, pending approvals and delegations poll, every 60 s, and nothing polls in the background (see [src/lib/query-client.js](src/lib/query-client.js) and `LIVE_INTERVAL_MS` in [src/lib/queries.js](src/lib/queries.js)). Realtime `postgres_changes` was removed in September 2026: on the Nano instance it cost ~43% of all database time plus a logical-replication decoder, the box lived in swap, and the 19:00 deadline rush produced 20-30 s stalls and "database timeout"s. `npm test` fails if a `postgres_changes` subscription is re-added. Only bring it back together with a compute upgrade.
+- **Freshness:** polling, not Realtime. Everything refetches on opening or returning to the app if older than 2 minutes; while the app stays open only tasks, pending approvals, delegations and requests for more time poll, every 60 s, and nothing polls in the background (see [src/lib/query-client.js](src/lib/query-client.js) and `LIVE_INTERVAL_MS` in [src/lib/queries.js](src/lib/queries.js)). Realtime `postgres_changes` was removed in September 2026: on the Nano instance it cost ~43% of all database time plus a logical-replication decoder, the box lived in swap, and the 19:00 deadline rush produced 20-30 s stalls and "database timeout"s. `npm test` fails if a `postgres_changes` subscription is re-added. Only bring it back together with a compute upgrade.
 - **Push:** `sendPushNotification()` in [src/api/supabaseClient.js](src/api/supabaseClient.js) invokes the `send-push-notification` edge function.
 
 ## Conventions
@@ -93,6 +93,19 @@ the delegator's again). The window is enforced client-side
 function's constant and the people listed inside `refuse_delegation` must stay
 in step with `src/lib/taskHelpers.js`, and so must the `interval '3 hours'` in the
 `close-unanswered-delegations` cron gate.
+
+More time. A child can ask the parents for more time on one of today's tasks,
+before or after its deadline (+30 min, +1 h, +2 h or the rest of the day, with
+an optional reason); the parents grant or refuse it on Relatório → Aprovações
+(`extension_requests`, lifecycle next to `EXTENSION_REQUEST_STATUS` in
+[src/lib/taskHelpers.js](src/lib/taskHelpers.js)). A grant writes a
+`task_extensions` row whose `until_time` is that day's new deadline (null = the
+rest of the day, which is what every older extension means): done by then pays
+in full, after it is late, never done that day is still a failure. Granting
+also corrects a photo already filed as late while the request waited. The
+deadline rule lives in `completionTypeFor` / `effectiveDeadline`;
+`check-task-reminders` moves its reminders to `until_time`, and its cron gate
+has a third clause for extensions (migration 027).
 
 Paying is the cleanup. Right after the parents record a payment the app calls
 `purge-paid` for those children, and it runs nightly as a safety net. What it

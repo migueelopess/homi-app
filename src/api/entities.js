@@ -104,6 +104,22 @@ export const TaskService = {
     return data;
   },
 
+  // More time was granted after the photo had already been filed as late (see
+  // correctedForExtension). Guarded on 'late', so it can only ever upgrade a
+  // row; one already sent back for a fix keeps its one halving.
+  async reclassifyLate(row, completionType, fullValue) {
+    const value = row.revised ? Math.round((fullValue / 2) * 100) / 100 : fullValue;
+    const { data, error } = await supabase
+      .from('tasks')
+      .update({ completion_type: completionType, value })
+      .eq('id', row.id)
+      .eq('completion_type', 'late')
+      .select()
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  },
+
   // Parent bounces a task back to the child to fix a detail. The value is
   // halved once (the `revised` flag prevents re-halving on repeated bounces)
   // and the note is stored for the child. Status becomes 'needs_revision' until
@@ -412,6 +428,44 @@ export const TaskExtensionService = {
       .insert(record)
       .select()
       .single();
+    if (error) throw error;
+    return data;
+  },
+};
+
+// A child asking the parents for more time (see EXTENSION_REQUEST_STATUS in
+// src/lib/taskHelpers.js). Only parents can write a decision (RLS).
+export const ExtensionRequestService = {
+  async listSince(fromDate) {
+    const { data, error } = await supabase
+      .from('extension_requests')
+      .select('*')
+      .gte('task_date', fromDate)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data;
+  },
+
+  async create(record) {
+    const { data, error } = await supabase
+      .from('extension_requests')
+      .insert({ ...record, status: 'pending' })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  // Guarded on 'pending', so two parents answering at once cannot both win.
+  // Returns the updated row, or null if it had already been decided.
+  async decide(id, status, deciderId) {
+    const { data, error } = await supabase
+      .from('extension_requests')
+      .update({ status, decided_at: new Date().toISOString(), decided_by: deciderId ?? null })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .select()
+      .maybeSingle();
     if (error) throw error;
     return data;
   },

@@ -18,7 +18,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const PEOPLE = ["Inês", "Pedro", "Miguel"];
 // The overnight broken-delegation check looks back 30 days; a little margin.
 const DELEGATION_LOOKBACK_DAYS = 35;
-// Reminders, extensions and push de-duplication keys only matter on the day.
+// Reminders, extensions, requests for more time and push de-duplication keys
+// only matter on the day.
 const DAY_DATA_KEEP_DAYS = 7;
 
 const corsHeaders = {
@@ -142,6 +143,7 @@ Deno.serve(async (req) => {
     };
     const reminders = await del(supabase.from("task_reminders").delete({ count: "exact" }).lt("task_date", dayCutoff));
     const extensions = await del(supabase.from("task_extensions").delete({ count: "exact" }).lt("task_date", dayCutoff));
+    const extensionRequests = await del(supabase.from("extension_requests").delete({ count: "exact" }).lt("task_date", dayCutoff));
     const pushKeys = await del(supabase.from("sent_push_notifications").delete({ count: "exact" })
       .lt("sent_at", `${dayCutoff}T00:00:00Z`));
 
@@ -163,7 +165,8 @@ Deno.serve(async (req) => {
 
     const result = {
       por_pessoa: summary, tarefas_apagadas: toDelete.length, fotos_apagadas: photosDeleted,
-      lembretes: reminders, prolongamentos: extensions, marcas_push: pushKeys, ocasionais: occasional,
+      lembretes: reminders, prolongamentos: extensions, pedidos_de_tempo: extensionRequests,
+      marcas_push: pushKeys, ocasionais: occasional,
     };
     console.log("[purge-paid]", JSON.stringify(result));
     return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json", ...corsHeaders } });

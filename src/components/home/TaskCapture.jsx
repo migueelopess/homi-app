@@ -5,24 +5,20 @@ import { TaskService, OccasionalTaskService } from '@/api/entities';
 import { remindersByDateQuery, INVALIDATE } from '@/lib/queries';
 import { sendPushNotification } from '@/api/supabaseClient';
 import { uploadTaskPhoto } from '@/api/storage';
-import { COMPLETION_TYPES, getTaskValue, getLocalDateStr, sameTaskSlot, slotColumns, completionMoment, completionTypeFor } from '@/lib/taskHelpers';
+import { COMPLETION_TYPES, completionValue, getLocalDateStr, sameTaskSlot, slotColumns, completionMoment, completionTypeFor } from '@/lib/taskHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, Loader2, RefreshCw, WifiOff } from 'lucide-react';
 
-// Value of a completed task. An occasional task carries its own explicit
-// reward (halved with a reminder, quartered when late) and that always wins;
-// everything else follows the standard scale, which is also where Sidney
-// chores get paid €0 unless this person took the task on from a sibling.
+// Value of a completed task — see completionValue. An occasional task carries
+// its own reward; Sidney chores pay only when taken on from a sibling.
 function taskValue(task, completionType) {
   const isOccasional = task._occasional || task._type === 'occasional';
-  const reward = isOccasional && task.reward != null ? Number(task.reward) : null;
-  if (reward != null) {
-    if (completionType === 'on_time_no_reminder') return reward;
-    if (completionType === 'on_time_with_reminder') return Math.round(reward * 50) / 100;
-    if (completionType === 'late') return Math.round(reward * 25) / 100;
-    return 0;
-  }
-  return getTaskValue(task.task_name, completionType, { delegated: !!task._delegated });
+  return completionValue({
+    taskName: task.task_name,
+    completionType,
+    reward: isOccasional && task.reward != null ? task.reward : null,
+    delegated: !!task._delegated,
+  });
 }
 
 // One-tap task completion: `capture(task)` opens the OS camera straight from
@@ -81,7 +77,7 @@ const TaskCapture = forwardRef(function TaskCapture({ person }, ref) {
         at: doneAt,
         hasReminder,
         delegated: !!task._delegated,
-        extended: !!task._isExtended,
+        extension: task._extension ?? null,
       });
       const value = taskValue(task, completion_type);
       const isOccasional = task._occasional || task._type === 'occasional';

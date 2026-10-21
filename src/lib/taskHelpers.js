@@ -458,9 +458,142 @@ export function isWithinDeadline(endTime, at = new Date()) {
 // had already passed when they asked for help. Doing someone a favour minutes
 // after accepting it must not pay the 25% "late" rate. What still applies is
 // doing it that day — an accepted delegation left undone is a double failure.
-export function completionTypeFor({ endTime, at = new Date(), hasReminder = false, delegated = false, extended = false }) {
-  const inTime = delegated || extended || isWithinDeadline(endTime, at);
+//
+// `extension` is the parents' grant of more time for this occurrence, if any:
+// its `until_time` replaces the deadline, and one with no `until_time` (every
+// extension before October 2026) means "not late for the rest of the day".
+export function completionTypeFor({ endTime, at = new Date(), hasReminder = false, delegated = false, extension = null }) {
+  const inTime = delegated || isWithinDeadline(effectiveDeadline(endTime, extension), at);
   if (!inTime) return 'late';
+  return hasReminder ? 'on_time_with_reminder' : 'on_time_no_reminder';
+}
+
+// What a completed task is worth. An occasional task carries its own explicit
+// reward (halved with a reminder, quartered when late) and that always wins;
+// everything else follows the standard scale, which is also where Sidney
+// chores get paid €0 unless this person took the task on from a sibling.
+export function completionValue({ taskName, completionType, reward = null, delegated = false }) {
+  if (reward != null) {
+    const r = Number(reward);
+    if (completionType === 'on_time_no_reminder') return r;
+    if (completionType === 'on_time_with_reminder') return Math.round(r * 50) / 100;
+    if (completionType === 'late') return Math.round(r * 25) / 100;
+    return 0;
+  }
+  return getTaskValue(taskName, completionType, { delegated });
+}
+
+// ---------------------------------------------------------------
+// More time
+// ---------------------------------------------------------------
+//
+// A child can ask the parents for more time on one of today's tasks — before
+// its deadline as well as after — choosing how much. The parents grant or
+// refuse it on Relatório → Aprovações; a granted request becomes a
+// task_extensions row whose `until_time` is the new deadline for that day:
+// done by then is on time and paid in full, after it is late, and never done
+// that day is a failure exactly as before. More time never moves a task to
+// another day.
+//
+//   pending ──parents say yes──▶ granted   (task_extensions row written)
+//      └─────parents say no───▶ refused   (the original deadline stands)
+//
+// A request nobody answered simply lapses with the day. One request per task
+// per day, and a task with a request cannot also be delegated (nor the other
+// way round): it is one or the other.
+export const EXTENSION_REQUEST_STATUS = {
+  PENDING: 'pending',
+  GRANTED: 'granted',
+  REFUSED: 'refused',
+};
+
+// What a child can ask for. `minutes: null` = until the end of the day.
+export const EXTRA_TIME_OPTIONS = [
+  { minutes: 30, label: '+30 min' },
+  { minutes: 60, label: '+1 h' },
+  { minutes: 120, label: '+2 h' },
+  { minutes: null, label: 'Até ao fim do dia' },
+];
+
+// A new deadline never crosses midnight — the task belongs to its day.
+export const LATEST_DEADLINE = '23:59';
+
+const toMinutes = (hhmm) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+};
+const fromMinutes = (total) =>
+  `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+
+// The deadline that applies today: the extension's new time when the parents
+// gave more time ("until the end of the day" = none), otherwise the task's own.
+export function effectiveDeadline(endTime, extension = null) {
+  if (!extension) return endTime ?? null;
+  return extension.until_time ?? null;
+}
+
+// The new deadline a child is asking for. Counted from the deadline, or from
+// now if that has already passed — asking for "+1 h" at 19:40 on a 19:00 task
+// must give an hour from now, not a time already gone.
+export function requestedUntil(endTime, minutes, now = new Date()) {
+  if (minutes == null) return null;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const base = endTime ? Math.max(toMinutes(endTime), nowMinutes) : nowMinutes;
+  return fromMinutes(Math.min(base + minutes, toMinutes(LATEST_DEADLINE)));
+}
+
+// "até às 20:00" / "até ao fim do dia".
+export function untilLabel(untilTime) {
+  return untilTime ? `até às ${untilTime}` : 'até ao fim do dia';
+}
+
+// Requests and extensions are matched to a task the way extensions always
+// were: person, day, name and exact slot (also what the unique index says).
+const sameOccurrenceOnDay = (record, person, taskName, endTime, date) =>
+  record.person === person && record.task_name === taskName &&
+  sameTaskSlot(record.end_time, endTime) && (record.task_date ?? date) === date;
+
+export function extensionRequestFor(requests = [], person, taskName, endTime, date) {
+  return requests.find(r => sameOccurrenceOnDay(r, person, taskName, endTime, date)) ?? null;
+}
+
+// The extension in force for a task today. A granted request counts even
+// before the extensions list has been refetched — the child's requests poll,
+// extensions do not — but a real extension row wins: if one already existed
+// when the request was granted, that one is what the server goes by.
+export function extensionFor({ extensions = [], requests = [], person, taskName, endTime, date }) {
+  const row = extensions.find(e => sameOccurrenceOnDay(e, person, taskName, endTime, date));
+  if (row) return row;
+  const granted = requests.find(r =>
+    r.status === EXTENSION_REQUEST_STATUS.GRANTED && sameOccurrenceOnDay(r, person, taskName, endTime, date));
+  return granted ? { until_time: granted.until_time ?? null, _fromRequest: true } : null;
+}
+
+// Requests still waiting for the parents. Only today's: yesterday's lapsed
+// with its day.
+export function pendingExtensionRequests(requests = [], today = getLocalDateStr()) {
+  return requests.filter(r => r.status === EXTENSION_REQUEST_STATUS.PENDING && r.task_date === today);
+}
+
+// "3.º pedido esta semana" — this request's place among the child's requests
+// in the same week, for the parents' context.
+export function extensionRequestOrdinal(requests = [], request) {
+  const week = getWeekKey(new Date(`${request.task_date}T12:00:00`));
+  return requests.filter(r =>
+    r.person === request.person &&
+    getWeekKey(new Date(`${r.task_date}T12:00:00`)) === week &&
+    (r.created_at ?? '') <= (request.created_at ?? '')
+  ).length;
+}
+
+// A task already submitted as late while its request was waiting, now inside
+// the time the parents gave: it was on time after all. Returns the corrected
+// completion type, or null when there is nothing to correct. A child who asked
+// in time must not lose money because the parents answered late.
+export function correctedForExtension(row, untilTime, hasReminder = false) {
+  if (row?.completion_type !== 'late') return null;
+  const at = row.created_date ? new Date(row.created_date) : null;
+  if (!at || !isWithinDeadline(untilTime ?? null, at)) return null;
   return hasReminder ? 'on_time_with_reminder' : 'on_time_no_reminder';
 }
 

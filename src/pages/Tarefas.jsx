@@ -8,7 +8,7 @@ import {
 import { sendTaskReminder } from '@/api/pushNotifications';
 import { useCurrentUser, isParent } from '@/lib/useCurrentUser';
 import { useAuth } from '@/lib/AuthContext';
-import { PEOPLE, PERSON_AVATARS, TASK_ICONS, COMPLETION_TYPES, SIDNEY_TASKS, getLocalDateStr, sameTaskSlot, scheduledOccurrence, occasionalOccurrence, delegationOccurrence, settlesSlot, slotColumns } from '@/lib/taskHelpers';
+import { PEOPLE, PERSON_AVATARS, TASK_ICONS, COMPLETION_TYPES, SIDNEY_TASKS, getLocalDateStr, sameTaskSlot, scheduledOccurrence, occasionalOccurrence, delegationOccurrence, settlesSlot, slotColumns, effectiveDeadline, untilLabel } from '@/lib/taskHelpers';
 
 // Which occurrence a row in this page's list stands for. A task taken over from
 // a sibling is the delegation, not the original the card was built from.
@@ -211,13 +211,14 @@ export default function Tarefas() {
           );
           const extension = extensions.find(e => e.person === person && e.task_name === t.task_name && sameTaskSlot(e.end_time, t.end_time));
           const cancellation = cancellations.find(c => c.person === person && settlesSlot(c, scheduledOccurrence(t)));
-          const overdue = isOverdue(t.end_time, dateStr);
+          // With more time given, late means past the new deadline.
+          const overdue = isOverdue(effectiveDeadline(t.end_time, extension), dateStr);
           return {
             ...t,
             _type: 'scheduled',
             _done: completedTasks.some(ct => ct.person === person && ct.date === dateStr && settlesSlot(ct, scheduledOccurrence(t))),
             _reminded: reminders.some(r => r.person === person && r.task_name === t.task_name && sameTaskSlot(r.end_time, t.end_time)),
-            _overdue: extension ? false : overdue,
+            _overdue: overdue,
             _extended: !!extension,
             _extension: extension || null,
             _delegation: delegation || null,
@@ -234,13 +235,14 @@ export default function Tarefas() {
           );
           const extension = extensions.find(e => e.person === person && e.task_name === t.task_name && sameTaskSlot(e.end_time, t.end_time));
           const cancellation = cancellations.find(c => c.person === person && settlesSlot(c, occasionalOccurrence(t)));
-          const overdue = isOverdue(t.end_time, dateStr);
+          // With more time given, late means past the new deadline.
+          const overdue = isOverdue(effectiveDeadline(t.end_time, extension), dateStr);
           return {
             ...t,
             _type: 'occasional',
             _done: t.completed || completedTasks.some(ct => ct.person === person && ct.date === dateStr && settlesSlot(ct, occasionalOccurrence(t))),
             _reminded: reminders.some(r => r.person === person && r.task_name === t.task_name && sameTaskSlot(r.end_time, t.end_time)),
-            _overdue: extension ? false : overdue,
+            _overdue: overdue,
             _extended: !!extension,
             _extension: extension || null,
             _delegation: delegation || null,
@@ -427,13 +429,13 @@ export default function Tarefas() {
                         <Ban className="w-3 h-3" />
                         Cancelada
                       </Badge>
-                    ) : task._extended ? (
-                      <Badge className="bg-amber-500/10 text-amber-600 text-[10px] flex-shrink-0">
-                        Extendida
-                      </Badge>
                     ) : task._overdue ? (
                       <Badge variant="destructive" className="text-[10px] flex-shrink-0">
                         Atrasada
+                      </Badge>
+                    ) : task._extended ? (
+                      <Badge className="bg-amber-500/10 text-amber-600 text-[10px] flex-shrink-0">
+                        Mais tempo
                       </Badge>
                     ) : (
                       <Badge variant="outline" className="text-[10px] flex-shrink-0">
@@ -498,7 +500,7 @@ export default function Tarefas() {
                 )}
                 {selectedTask._extended && (
                   <div className="bg-amber-500/10 rounded-xl p-3 text-sm text-amber-600 text-center font-medium">
-                    ✅ Já foi dado mais tempo para esta tarefa
+                    ✅ Já foi dado mais tempo para esta tarefa — {untilLabel(selectedTask._extension?.until_time)}
                     {selectedTask._extension?.with_reminder && ' (com lembrete)'}
                   </div>
                 )}
@@ -589,6 +591,24 @@ export default function Tarefas() {
                     <p className="text-xs text-muted-foreground text-center mt-3">
                       O valor da tarefa será reduzido para {selectedTask.person} ao concluir com lembrete
                     </p>
+                  )}
+                  {/* More time before the deadline, too — no need to wait for it to be late. */}
+                  {!selectedTask._extended && !selectedTask._done && selectedTask.end_time && !selectedTask._delegation?._isReceived && (
+                    <button
+                      disabled={extendTaskMutation.isPending}
+                      onClick={() =>
+                        extendTaskMutation.mutate({
+                          person: selectedTask.person,
+                          taskName: selectedTask.task_name,
+                          endTime: selectedTask.end_time,
+                          withReminder: false,
+                        })
+                      }
+                      className="w-full py-3 mt-3 rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold text-sm disabled:opacity-40 flex items-center justify-center gap-2"
+                    >
+                      <TimerReset className="w-4 h-4" />
+                      Dar mais tempo (até ao fim do dia)
+                    </button>
                   )}
                 </>
               )}

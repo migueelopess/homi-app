@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import {
   getLocalDateStr, scheduledOccurrence, occasionalOccurrence,
-  delegationOccurrence, settlesSlot, isDelegationWaived,
+  delegationOccurrence, settlesSlot, isDelegationWaived, extensionFor, effectiveDeadline,
 } from './taskHelpers';
 
 function getTodayKey() {
@@ -29,7 +29,11 @@ function scheduleNotification(title, body, fireAt) {
 // A delegation that is still `pending` stays on the list on purpose: nobody has
 // taken it on yet, so it remains this person's responsibility (and would be
 // counted as their failure).
-function buildTodayList({ scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations }) {
+//
+// Each of the person's own tasks also gets `_deadline`: its own end_time, or
+// the new one when the parents gave more time (null = until the end of the
+// day, so no deadline reminders at all).
+function buildTodayList({ scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations, extensions = [], extensionRequests = [] }) {
   const todayKey = getTodayKey();
   const today = getLocalDateStr();
   const todayDelegations = delegations.filter(d => d.task_date === today);
@@ -84,7 +88,14 @@ function buildTodayList({ scheduledTasks, todayTasks, person, occasionalTasks, d
       !isDone(delegationOccurrence(d))
     );
 
-  return { scheduled, occasional, takenOn };
+  const withDeadline = (task) => ({
+    ...task,
+    _deadline: effectiveDeadline(task.end_time, extensionFor({
+      extensions, requests: extensionRequests, person, taskName: task.task_name, endTime: task.end_time, date: today,
+    })),
+  });
+
+  return { scheduled: scheduled.map(withDeadline), occasional: occasional.map(withDeadline), takenOn };
 }
 
 export function useNotifications({
@@ -94,6 +105,8 @@ export function useNotifications({
   occasionalTasks = [],
   delegations = [],
   cancellations = [],
+  extensions = [],
+  extensionRequests = [],
 }) {
   const timersRef = useRef([]);
 
@@ -107,12 +120,13 @@ export function useNotifications({
     timersRef.current = [];
 
     const { scheduled, occasional, takenOn } = buildTodayList({
-      scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations,
+      scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations, extensions, extensionRequests,
     });
 
     const schedulePair = (task, specialCopy, delegatedFrom = null) => {
-      if (!task.end_time) return;
-      const [h, m] = task.end_time.split(':').map(Number);
+      const deadline = task._deadline !== undefined ? task._deadline : task.end_time;
+      if (!deadline) return;
+      const [h, m] = deadline.split(':').map(Number);
 
       // A task taken on from a sibling gets an earlier heads-up: it is not
       // part of this child's own routine, so it is the easiest to forget —
@@ -157,7 +171,7 @@ export function useNotifications({
     takenOn.forEach((task) => schedulePair(task, task.task_type === 'occasional', task.from_person));
 
     return () => timersRef.current.forEach(clearTimeout);
-  }, [scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations]);
+  }, [scheduledTasks, todayTasks, person, occasionalTasks, delegations, cancellations, extensions, extensionRequests]);
 }
 
 export function getPendingTasks(

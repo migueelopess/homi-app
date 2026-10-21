@@ -144,8 +144,14 @@ export function delegatedOccurrence(delegation) {
 
 // A request nobody accepted that is still waiting for the parents. If the
 // child ended up doing the task themselves there is nothing left to decide.
-export function delegationNeedsParents(delegation, tasks = []) {
+//
+// Only on the request's own day. Once the day is over an unanswered request is
+// left as it stands — the task was the child's, and the overnight check has
+// recorded the failure — and showing it to the parents days later was just
+// clutter. (A parent can still cancel that day's task in Tarefas.)
+export function delegationNeedsParents(delegation, tasks = [], today = getLocalDateStr()) {
   if (delegation?.status !== DELEGATION_STATUS.UNANSWERED) return false;
+  if (delegation.task_date !== today) return false;
   const occurrence = delegatedOccurrence(delegation);
   return !tasks.some(t =>
     t.person === delegation.from_person &&

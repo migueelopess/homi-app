@@ -21,14 +21,13 @@ function answersText(delegation) {
 }
 
 /**
- * Requests for help that no sibling accepted within the hour.
+ * Requests for help that no sibling accepted within the window.
  *
  * The child said they could not do the task and nobody took it over, so the
  * parents decide: either the task is cancelled (no failure for anyone), or the
  * child could have done it after all and it is theirs again — left undone, it
- * becomes an ordinary failure overnight. A decision made after midnight still
- * works: cancelling writes a tombstone, which also waives a failure that was
- * already recorded for that day.
+ * becomes an ordinary failure overnight. Only the request's own day is shown
+ * (see delegationNeedsParents): one left undecided stays the child's task.
  */
 export default function UnansweredDelegations({ delegations = [], tasks = [], deciderId }) {
   const queryClient = useQueryClient();

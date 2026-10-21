@@ -283,16 +283,19 @@ t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_
   t('minutes left are rounded up', minutesLeftToAccept(req, at(18, 20)), 160);
   t('minutes left never go negative', minutesLeftToAccept(req, at(22, 0)), 0);
 
+  const day = '2026-10-12';
   const unanswered = { ...req, status: DELEGATION_STATUS.UNANSWERED };
-  t('an unanswered request waits for the parents', delegationNeedsParents(unanswered, []));
-  t('a pending request does not (yet)', delegationNeedsParents(req, []), false);
-  t('a decided request does not', delegationNeedsParents({ ...req, status: 'parent_cancelled' }, []), false);
+  t('an unanswered request waits for the parents', delegationNeedsParents(unanswered, [], day));
+  t('a pending request does not (yet)', delegationNeedsParents(req, [], day), false);
+  t('a decided request does not', delegationNeedsParents({ ...req, status: 'parent_cancelled' }, [], day), false);
   const doneItself = { person: 'Miguel', date: '2026-10-12', task_name: 'Maquina', end_time: '19:00',
                        completion_type: 'on_time_no_reminder', scheduled_task_id: 9 };
-  t('if the child did it after all, the parents are not asked', delegationNeedsParents(unanswered, [doneItself]), false);
+  t('if the child did it after all, the parents are not asked', delegationNeedsParents(unanswered, [doneItself], day), false);
   t('a sibling doing their own same-named task does not count',
-    delegationNeedsParents(unanswered, [{ ...doneItself, person: 'Pedro', scheduled_task_id: 33 }]));
-  t('a failure is not "done"', delegationNeedsParents(unanswered, [{ ...doneItself, completion_type: 'not_done' }]));
+    delegationNeedsParents(unanswered, [{ ...doneItself, person: 'Pedro', scheduled_task_id: 33 }], day));
+  t('a failure is not "done"', delegationNeedsParents(unanswered, [{ ...doneItself, completion_type: 'not_done' }], day));
+  t("the next day it no longer waits — it was the child's, and is gone from the list",
+    delegationNeedsParents(unanswered, [], '2026-10-13'), false);
 }
 
 // ===== Siblings accept or refuse =====

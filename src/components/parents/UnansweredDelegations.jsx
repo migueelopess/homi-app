@@ -29,12 +29,12 @@ function answersText(delegation) {
  * becomes an ordinary failure overnight. Only the request's own day is shown
  * (see delegationNeedsParents): one left undecided stays the child's task.
  */
-export default function UnansweredDelegations({ delegations = [], tasks = [], deciderId }) {
+export default function UnansweredDelegations({ delegations = [], tasks = [], cancellations = [], deciderId }) {
   const queryClient = useQueryClient();
   const today = getLocalDateStr();
 
   const waiting = delegations
-    .filter(d => delegationNeedsParents(d, tasks))
+    .filter(d => delegationNeedsParents(d, tasks, { cancellations }))
     .sort((a, b) => (a.task_date + (a.end_time || '')).localeCompare(b.task_date + (b.end_time || '')));
 
   const refresh = () => {

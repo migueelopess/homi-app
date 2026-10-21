@@ -285,17 +285,22 @@ t('an ordinary task still pays 1.00', getTaskValue('Despejar lixo', 'on_time_no_
 
   const day = '2026-10-12';
   const unanswered = { ...req, status: DELEGATION_STATUS.UNANSWERED };
-  t('an unanswered request waits for the parents', delegationNeedsParents(unanswered, [], day));
-  t('a pending request does not (yet)', delegationNeedsParents(req, [], day), false);
-  t('a decided request does not', delegationNeedsParents({ ...req, status: 'parent_cancelled' }, [], day), false);
+  t('an unanswered request waits for the parents', delegationNeedsParents(unanswered, [], { today: day }));
+  t('a pending request does not (yet)', delegationNeedsParents(req, [], { today: day }), false);
+  t('a decided request does not', delegationNeedsParents({ ...req, status: 'parent_cancelled' }, [], { today: day }), false);
   const doneItself = { person: 'Miguel', date: '2026-10-12', task_name: 'Maquina', end_time: '19:00',
                        completion_type: 'on_time_no_reminder', scheduled_task_id: 9 };
-  t('if the child did it after all, the parents are not asked', delegationNeedsParents(unanswered, [doneItself], day), false);
+  t('if the child did it after all, the parents are not asked', delegationNeedsParents(unanswered, [doneItself], { today: day }), false);
   t('a sibling doing their own same-named task does not count',
-    delegationNeedsParents(unanswered, [{ ...doneItself, person: 'Pedro', scheduled_task_id: 33 }], day));
-  t('a failure is not "done"', delegationNeedsParents(unanswered, [{ ...doneItself, completion_type: 'not_done' }], day));
+    delegationNeedsParents(unanswered, [{ ...doneItself, person: 'Pedro', scheduled_task_id: 33 }], { today: day }));
+  t('a failure is not "done"', delegationNeedsParents(unanswered, [{ ...doneItself, completion_type: 'not_done' }], { today: day }));
   t("the next day it no longer waits — it was the child's, and is gone from the list",
-    delegationNeedsParents(unanswered, [], '2026-10-13'), false);
+    delegationNeedsParents(unanswered, [], { today: '2026-10-13' }), false);
+  const tombstone = { person: 'Miguel', task_date: '2026-10-12', task_name: 'Maquina', end_time: '19:00', scheduled_task_id: 9 };
+  t('a task the parents already cancelled in Tarefas is no longer asked about',
+    delegationNeedsParents(unanswered, [], { today: day, cancellations: [tombstone] }), false);
+  t("a sibling's cancellation does not count",
+    delegationNeedsParents(unanswered, [], { today: day, cancellations: [{ ...tombstone, person: 'Pedro', scheduled_task_id: 33 }] }));
 }
 
 // ===== Siblings accept or refuse =====

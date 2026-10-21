@@ -148,11 +148,15 @@ export function delegatedOccurrence(delegation) {
 // Only on the request's own day. Once the day is over an unanswered request is
 // left as it stands — the task was the child's, and the overnight check has
 // recorded the failure — and showing it to the parents days later was just
-// clutter. (A parent can still cancel that day's task in Tarefas.)
-export function delegationNeedsParents(delegation, tasks = [], today = getLocalDateStr()) {
+// clutter. (A parent can still cancel that day's task in Tarefas.) A task the
+// parents already cancelled from Tarefas is decided too.
+export function delegationNeedsParents(delegation, tasks = [], { today = getLocalDateStr(), cancellations = [] } = {}) {
   if (delegation?.status !== DELEGATION_STATUS.UNANSWERED) return false;
   if (delegation.task_date !== today) return false;
   const occurrence = delegatedOccurrence(delegation);
+  const cancelled = cancellations.some(c =>
+    c.person === delegation.from_person && c.task_date === delegation.task_date && settlesSlot(c, occurrence));
+  if (cancelled) return false;
   return !tasks.some(t =>
     t.person === delegation.from_person &&
     t.date === delegation.task_date &&

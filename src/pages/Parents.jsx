@@ -62,7 +62,7 @@ export default function Parents() {
   });
 
   // Requests for help nobody accepted, waiting for a parent's decision.
-  const unansweredCount = delegations.filter(d => delegationNeedsParents(d, tasks)).length;
+  const unansweredCount = delegations.filter(d => delegationNeedsParents(d, tasks, { cancellations })).length;
 
   // Children asking for more time today.
   const { data: extensionRequests = [] } = useQuery({
@@ -501,7 +501,7 @@ export default function Parents() {
 
         <TabsContent value="approvals" className="space-y-3">
           <ExtensionRequests requests={extensionRequests} tasks={tasks} deciderId={user?.id} />
-          <UnansweredDelegations delegations={delegations} tasks={tasks} deciderId={user?.id} />
+          <UnansweredDelegations delegations={delegations} tasks={tasks} cancellations={cancellations} deciderId={user?.id} />
           <ApprovalsTab approverId={user?.id} />
         </TabsContent>
 
